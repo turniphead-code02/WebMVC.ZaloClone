@@ -19,3 +19,4 @@ public class Conversation
     public ICollection<ConversationMember> Members { get; set; } = new List<ConversationMember>();
     public ICollection<Message> Messages { get; set; } = new List<Message>();
 }
+

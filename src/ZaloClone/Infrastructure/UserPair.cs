@@ -7,3 +7,4 @@ public static class UserPair
         return a.CompareTo(b) < 0 ? (a, b) : (b, a);
     }
 }
+

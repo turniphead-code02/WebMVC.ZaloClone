@@ -12,3 +12,4 @@ public class FriendRequest
     public User Sender { get; set; } = null!;
     public User Receiver { get; set; } = null!;
 }
+

@@ -8,3 +8,4 @@ public interface IFileStorageService
     bool IsAllowedExtension(string fileName, string category);
     long GetMaxSizeBytes(string category);
 }
+

@@ -10,3 +10,4 @@ public class UserBlock
     public User Blocker { get; set; } = null!;
     public User Blocked { get; set; } = null!;
 }
+

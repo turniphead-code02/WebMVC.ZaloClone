@@ -26,3 +26,4 @@ public class User
     public ICollection<UserBlock> BlockedByUsers { get; set; } = new List<UserBlock>();
     public ICollection<ConversationMember> ConversationMemberships { get; set; } = new List<ConversationMember>();
 }
+

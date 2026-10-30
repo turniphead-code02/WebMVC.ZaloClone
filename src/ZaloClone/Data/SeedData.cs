@@ -60,3 +60,4 @@ public static class SeedData
         logger.LogInformation("Khởi tạo thành công {Count} tài khoản mẫu.", users.Count);
     }
 }
+

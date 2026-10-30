@@ -12,3 +12,4 @@ public class MessageAttachment
 
     public Message Message { get; set; } = null!;
 }
+

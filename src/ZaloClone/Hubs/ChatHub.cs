@@ -90,3 +90,4 @@ public class ChatHub : Hub
     public static string GetUserGroupName(Guid userId) => $"user:{userId}";
     public static string GetConversationGroupName(Guid conversationId) => $"conv:{conversationId}";
 }
+

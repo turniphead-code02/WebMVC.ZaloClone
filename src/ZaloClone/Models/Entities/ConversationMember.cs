@@ -16,3 +16,4 @@ public class ConversationMember
     public User User { get; set; } = null!;
     public Message? LastReadMessage { get; set; }
 }
+

@@ -23,3 +23,4 @@ public class Message
     public User? PinnedBy { get; set; }
     public ICollection<MessageAttachment> Attachments { get; set; } = new List<MessageAttachment>();
 }
+

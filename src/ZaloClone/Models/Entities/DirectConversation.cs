@@ -11,3 +11,4 @@ public class DirectConversation
     public User User1 { get; set; } = null!;
     public User User2 { get; set; } = null!;
 }
+
