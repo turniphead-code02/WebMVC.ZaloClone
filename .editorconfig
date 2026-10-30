@@ -1,0 +1,65 @@
+root = true
+
+[*]
+charset = utf-8
+# Không ép end_of_line: để Git (.gitattributes) tự xử lý CRLF trên Windows / LF trên macOS
+insert_final_newline = true
+trim_trailing_whitespace = true
+indent_style = space
+indent_size = 4
+
+[*.{json,yml,yaml,csproj,props,targets,xml,config}]
+indent_size = 2
+
+[*.{cshtml,html,css,js}]
+indent_size = 4
+
+[*.md]
+trim_trailing_whitespace = false
+
+[*.cs]
+# ----- Tổ chức code -----
+csharp_style_namespace_declarations = file_scoped:warning
+dotnet_sort_system_directives_first = true
+csharp_using_directive_placement = outside_namespace:warning
+csharp_prefer_braces = true:warning
+csharp_style_var_when_type_is_apparent = true:suggestion
+csharp_new_line_before_open_brace = all
+
+# ----- Async -----
+dotnet_diagnostic.CA2007.severity = none    # Không cần ConfigureAwait(false) trong ASP.NET Core
+dotnet_diagnostic.CS4014.severity = error   # Quên await Task -> báo lỗi build
+
+# ----- Đặt tên -----
+# Interface: IPascalCase
+dotnet_naming_rule.interface_should_begin_with_i.severity = warning
+dotnet_naming_rule.interface_should_begin_with_i.symbols = interface
+dotnet_naming_rule.interface_should_begin_with_i.style = begins_with_i
+dotnet_naming_symbols.interface.applicable_kinds = interface
+dotnet_naming_style.begins_with_i.required_prefix = I
+dotnet_naming_style.begins_with_i.capitalization = pascal_case
+
+# Field private: _camelCase
+dotnet_naming_rule.private_fields_underscore.severity = warning
+dotnet_naming_rule.private_fields_underscore.symbols = private_fields
+dotnet_naming_rule.private_fields_underscore.style = underscore_camel
+dotnet_naming_symbols.private_fields.applicable_kinds = field
+dotnet_naming_symbols.private_fields.applicable_accessibilities = private
+dotnet_naming_style.underscore_camel.required_prefix = _
+dotnet_naming_style.underscore_camel.capitalization = camel_case
+
+# Method async: hậu tố Async
+dotnet_naming_rule.async_methods_end_in_async.severity = warning
+dotnet_naming_rule.async_methods_end_in_async.symbols = async_methods
+dotnet_naming_rule.async_methods_end_in_async.style = ends_with_async
+dotnet_naming_symbols.async_methods.applicable_kinds = method
+dotnet_naming_symbols.async_methods.required_modifiers = async
+dotnet_naming_style.ends_with_async.required_suffix = Async
+dotnet_naming_style.ends_with_async.capitalization = pascal_case
+
+# Kiểu, method, property: PascalCase
+dotnet_naming_rule.types_pascal.severity = warning
+dotnet_naming_rule.types_pascal.symbols = types_and_members
+dotnet_naming_rule.types_pascal.style = pascal
+dotnet_naming_symbols.types_and_members.applicable_kinds = class, struct, enum, property, method, event, delegate
+dotnet_naming_style.pascal.capitalization = pascal_case

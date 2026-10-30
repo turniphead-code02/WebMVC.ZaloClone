@@ -1,0 +1,27 @@
+# Repo luôn lưu LF; khi checkout, Git tự đổi sang kiểu xuống dòng của máy
+# (Windows -> CRLF, macOS -> LF). Nhờ vậy không ai bị "đổi cả file" khi commit.
+* text=auto
+
+# File chỉ chạy trên Windows: luôn CRLF
+*.sln  text eol=crlf
+*.bat  text eol=crlf
+*.cmd  text eol=crlf
+*.ps1  text eol=crlf
+
+# File chạy trong Linux/Docker: luôn LF (CRLF sẽ làm script lỗi trong container)
+*.sh   text eol=lf
+Dockerfile text eol=lf
+*.sql  text eol=lf
+
+# Nhị phân: không bao giờ chuyển đổi
+*.png  binary
+*.jpg  binary
+*.jpeg binary
+*.gif  binary
+*.webp binary
+*.ico  binary
+*.pdf  binary
+*.docx binary
+*.xlsx binary
+*.pptx binary
+*.zip  binary
