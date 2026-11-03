@@ -1,0 +1,49 @@
+@model ZaloClone.Models.ViewModels.Friend.FriendSearchPageViewModel
+@{
+    ViewData["Title"] = "Thêm bạn";
+}
+
+<link rel="stylesheet" href="~/css/friend/friend-search.css" asp-append-version="true" />
+
+<div class="friend-search-page">
+    <h1 class="friend-search-title">Thêm bạn</h1>
+    <p class="friend-search-hint">Nhập số điện thoại hoặc email chính xác của người bạn muốn kết bạn.</p>
+
+    @Html.AntiForgeryToken()
+
+    <div class="friend-search-bar">
+        <input id="friendSearchInput" class="friend-search-input form-control" type="text"
+               placeholder="Số điện thoại hoặc email" maxlength="254" autocomplete="off" />
+        <button id="friendSearchBtn" type="button" class="btn btn-primary">Tìm kiếm</button>
+    </div>
+
+    <div id="friendSearchMessage" class="friend-search-message" role="status"></div>
+    <div id="friendSearchResult"></div>
+
+    <h2 class="friend-sent-title">Lời mời đã gửi (<span id="friendSentCount">@Model.SentRequests.Count</span>)</h2>
+    <div id="friendSentList" class="friend-sent-list">
+        @foreach (var r in Model.SentRequests)
+        {
+            <div class="friend-list-item" data-request-id="@r.RequestId">
+                @if (!string.IsNullOrEmpty(r.ReceiverAvatarUrl))
+                {
+                    <img class="friend-avatar" src="@r.ReceiverAvatarUrl" alt="" />
+                }
+                else
+                {
+                    <div class="friend-avatar friend-avatar-fallback">@(r.ReceiverName.Length > 0 ? r.ReceiverName.Substring(0, 1).ToUpper() : "?")</div>
+                }
+                <div class="friend-list-info">
+                    <div class="friend-list-name">@r.ReceiverName</div>
+                    <div class="friend-list-sub">Đã gửi lúc @r.CreatedAt.ToOffset(TimeSpan.FromHours(7)).ToString("HH:mm dd/MM/yyyy")</div>
+                </div>
+                <button type="button" class="btn btn-outline-secondary btn-sm friend-cancel-btn" data-request-id="@r.RequestId">Hủy lời mời</button>
+            </div>
+        }
+    </div>
+    <div id="friendSentEmpty" class="friend-sent-empty" @(Model.SentRequests.Count > 0 ? "hidden" : null)>Bạn chưa gửi lời mời nào.</div>
+</div>
+
+@section Scripts {
+    <script src="~/js/friend/friend-search.js" asp-append-version="true"></script>
+}

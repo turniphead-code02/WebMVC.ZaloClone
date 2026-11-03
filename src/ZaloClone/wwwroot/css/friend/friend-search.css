@@ -1,0 +1,100 @@
+.friend-search-page {
+    max-width: 620px;
+    margin: 1.5rem auto;
+}
+
+.friend-search-title {
+    font-size: 1.5rem;
+    font-weight: 600;
+    margin-bottom: .25rem;
+}
+
+.friend-search-hint {
+    color: #6c757d;
+    margin-bottom: 1rem;
+}
+
+.friend-search-bar {
+    display: flex;
+    gap: .5rem;
+}
+
+.friend-search-message {
+    min-height: 1.5rem;
+    margin: .5rem 0;
+    font-size: .9rem;
+}
+
+    .friend-search-message.is-error {
+        color: #dc3545;
+    }
+
+    .friend-search-message.is-ok {
+        color: #198754;
+    }
+
+.friend-list-item {
+    display: flex;
+    align-items: center;
+    gap: .75rem;
+    padding: .75rem;
+    border: 1px solid #e5e7eb;
+    border-radius: .5rem;
+    background: #fff;
+    margin-bottom: .5rem;
+}
+
+.friend-result-card {
+    border-color: #0068ff;
+}
+
+.friend-avatar {
+    width: 48px;
+    height: 48px;
+    border-radius: 50%;
+    object-fit: cover;
+    flex-shrink: 0;
+}
+
+.friend-avatar-fallback {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: #0068ff;
+    color: #fff;
+    font-weight: 600;
+    font-size: 1.1rem;
+}
+
+.friend-list-info {
+    flex: 1;
+    min-width: 0;
+}
+
+.friend-list-name {
+    font-weight: 600;
+}
+
+.friend-list-sub {
+    color: #6c757d;
+    font-size: .85rem;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.friend-status-tag {
+    color: #6c757d;
+    font-size: .85rem;
+}
+
+.friend-sent-title {
+    font-size: 1.1rem;
+    font-weight: 600;
+    margin: 1.75rem 0 .75rem;
+}
+
+.friend-sent-empty {
+    color: #6c757d;
+    font-size: .9rem;
+}
