@@ -1,0 +1,70 @@
+@model IEnumerable<ZaloClone.Models.Entities.User>
+
+@{
+    ViewData["Title"] = "Trang Admin";
+}
+
+<div class="container mt-4">
+    <h2>Trang Quản Trị Admin</h2>
+
+    <!-- Thống kê tổng quan dùng ViewBag -->
+    <div class="row my-3">
+        <div class="col-md-4">
+            <div class="alert alert-primary">Tổng số User: <strong>@ViewBag.TotalUsers</strong></div>
+        </div>
+        <div class="col-md-4">
+            <div class="alert alert-success">Tổng số Nhóm: <strong>@ViewBag.TotalGroups</strong></div>
+        </div>
+        <div class="col-md-4">
+            <div class="alert alert-info">Tổng số Tin nhắn: <strong>@ViewBag.TotalMessages</strong></div>
+        </div>
+    </div>
+
+    <!-- Bảng danh sách tài khoản -->
+    <table class="table table-bordered mt-3">
+        <thead>
+            <tr>
+                <th>Email</th>
+                <th>Tên hiển thị</th>
+                <th>Trạng thái</th>
+                <th>Hành động</th>
+            </tr>
+        </thead>
+        <tbody>
+            @foreach (var user in Model)
+            {
+                <tr>
+                    <td>@user.Email</td>
+                    <td>@user.DisplayName</td>
+                    <td>
+                        @if (user.IsLocked)
+                        {
+                            <span class="text-danger">Đã khóa</span>
+                        }
+                        else
+                        {
+                            <span class="text-success">Hoạt động</span>
+                        }
+                    </td>
+                    <td>
+                        @if (user.Role != "Admin")
+                        {
+                            <form asp-action="ToggleLock" method="post" style="display:inline;">
+                                @Html.AntiForgeryToken()
+                                <input type="hidden" name="userId" value="@user.Id" />
+                                @if (!user.IsLocked)
+                                {
+                                    <button type="submit" class="btn btn-danger btn-sm">Khóa</button>
+                                }
+                                else
+                                {
+                                    <button type="submit" class="btn btn-success btn-sm">Mở khóa</button>
+                                }
+                            </form>
+                        }
+                    </td>
+                </tr>
+            }
+        </tbody>
+    </table>
+</div>
