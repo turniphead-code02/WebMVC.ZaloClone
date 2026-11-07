@@ -39,8 +39,8 @@ public class AccountController : Controller
         return View(sampleUsers);
     }
 
+    [HttpGet]
     [HttpPost]
-    [ValidateAntiForgeryToken]
     public async Task<IActionResult> QuickLogin(Guid userId, string? returnUrl = null)
     {
         var user = await _db.Users.FirstOrDefaultAsync(u => u.Id == userId && !u.IsDeleted && !u.IsLocked);
@@ -51,7 +51,7 @@ public class AccountController : Controller
         }
 
         await SignInUserAsync(user);
-        return LocalRedirect(returnUrl ?? "/Friend/Search");
+        return LocalRedirect(returnUrl ?? "/");
     }
 
     [HttpPost]
