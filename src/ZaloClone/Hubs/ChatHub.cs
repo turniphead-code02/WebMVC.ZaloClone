@@ -3,6 +3,7 @@ using Microsoft.AspNetCore.SignalR;
 using Microsoft.EntityFrameworkCore;
 using ZaloClone.Data;
 using ZaloClone.Infrastructure;
+using ZaloClone.Models.Entities;
 
 namespace ZaloClone.Hubs;
 
@@ -85,6 +86,54 @@ public class ChatHub : Hub
 
         await Clients.OthersInGroup(GetConversationGroupName(conversationId))
             .SendAsync("UserTyping", new { conversationId, userId });
+    }
+
+    /// <summary>
+    /// Gửi tin nhắn tức thời qua SignalR WebSocket
+    /// </summary>
+    public async Task SendMessage(Guid conversationId, string content)
+    {
+        var userId = Context.User.GetUserId();
+        if (userId == Guid.Empty || string.IsNullOrWhiteSpace(content)) return;
+
+        var isMember = await _dbContext.ConversationMembers
+            .AnyAsync(m => m.ConversationId == conversationId && m.UserId == userId && m.LeftAt == null);
+        if (!isMember) return;
+
+        var sender = await _dbContext.Users.FindAsync(userId);
+        var now = DateTimeOffset.UtcNow;
+        var message = new Message
+        {
+            Id = Guid.NewGuid(),
+            ConversationId = conversationId,
+            SenderId = userId,
+            Content = content.Trim(),
+            MessageType = "Text",
+            CreatedAt = now
+        };
+
+        _dbContext.Messages.Add(message);
+
+        var conv = await _dbContext.Conversations.FindAsync(conversationId);
+        if (conv != null)
+        {
+            conv.LastMessageId = message.Id;
+            conv.UpdatedAt = now;
+        }
+
+        await _dbContext.SaveChangesAsync();
+
+        await Clients.Group(GetConversationGroupName(conversationId)).SendAsync("ReceiveMessage", new
+        {
+            id = message.Id,
+            conversationId = message.ConversationId,
+            senderId = message.SenderId,
+            senderName = sender?.DisplayName ?? "Người dùng",
+            senderAvatar = sender?.AvatarUrl ?? "",
+            content = message.Content,
+            createdAt = message.CreatedAt.ToString("HH:mm"),
+            formattedDate = message.CreatedAt.ToString("dd/MM/yyyy HH:mm")
+        });
     }
 
     public static string GetUserGroupName(Guid userId) => $"user:{userId}";

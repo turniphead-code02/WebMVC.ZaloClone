@@ -99,9 +99,8 @@ public class AccountController : Controller
         return View(new LoginViewModel { ReturnUrl = returnUrl });
     }
 
+    [HttpGet]
     [HttpPost]
-    [AllowAnonymous]
-    [ValidateAntiForgeryToken]
     public async Task<IActionResult> QuickLogin(Guid userId, string? returnUrl = null)
     public async Task<IActionResult> Login(LoginViewModel model)
     {
@@ -131,6 +130,7 @@ public class AccountController : Controller
         await SignInUserAsync(user);
         return LocalRedirect(returnUrl ?? "/Friend/Search");
         return RedirectToAction("Index", "Profile");
+        return LocalRedirect(returnUrl ?? "/");
     }
 
     // 3. ĐĂNG XUẤT (/Account/Logout)
