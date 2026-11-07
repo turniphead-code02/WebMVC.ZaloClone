@@ -6,6 +6,7 @@ using ZaloClone.Data;
 using ZaloClone.Hubs;
 using ZaloClone.Infrastructure;
 using ZaloClone.Models.Entities;
+using ZaloClone.Services.Friend;
 using ZaloClone.Services.Storage;
 
 var builder = WebApplication.CreateBuilder(args);
@@ -67,6 +68,9 @@ builder.Services.AddAuthorization();
 // 3. Đăng ký Services dùng chung
 builder.Services.AddScoped<IPasswordHasher<User>, PasswordHasher<User>>();
 builder.Services.AddScoped<IFileStorageService, LocalFileStorageService>();
+
+// Cặp 2: Dịch vụ bạn bè & lời mời kết bạn
+builder.Services.AddScoped<IFriendRequestService, FriendRequestService>();
 
 // 4. SignalR Real-time
 builder.Services.AddSignalR();

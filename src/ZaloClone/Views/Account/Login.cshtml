@@ -1,4 +1,5 @@
 @model ZaloClone.Services.Account.LoginViewModel
+@model List<ZaloClone.Models.Entities.User>
 @{
 	ViewData["Title"] = "Đăng nhập tài khoản ZaloClone";
 	Layout = null;
@@ -146,7 +147,9 @@
 				font-size: 13.5px;
 				font-weight: 600;
 				text-decoration: none;
-			}
+    ViewData["Title"] = "Đăng nhập";
+    var returnUrl = ViewBag.ReturnUrl as string;
+}
 
 				.zalo-link:hover {
 					text-decoration: underline;
@@ -160,57 +163,105 @@
 	<div class="zalo-subtitle">
 		Đăng nhập tài khoản ZaloClone<br />
 		để kết nối với ứng dụng ZaloClone Web
-	</div>
+<div class="row justify-content-center mt-4">
+    <div class="col-md-5">
+        <div class="card shadow-sm border-0 rounded-3 mb-4">
+            <div class="card-body p-4">
+                <div class="text-center mb-4">
+                    <h3 class="fw-bold text-primary">Zalo Clone</h3>
+                    <p class="text-muted small">Đăng nhập để kết nối với bạn bè</p>
+                </div>
 
 	<div class="account-login-box">
 		<div class="zalo-card-header">
 			Đăng nhập với mật khẩu
-		</div>
+                @if (!ViewData.ModelState.IsValid)
+                {
+                    <div class="alert alert-danger py-2 small">
+                        @Html.ValidationSummary(false, "", new { @class = "mb-0" })
+                    </div>
+                }
 
 		<div class="zalo-card-body">
 			@if (TempData["SuccessMessage"] != null)
-			{
+                @if (TempData["Error"] != null)
+                {
 				<div class="alert alert-success py-2 small">@TempData["SuccessMessage"]</div>
-			}
+                    <div class="alert alert-danger py-2 small">
+                        @TempData["Error"]
+                    </div>
+                }
 
 			<form asp-controller="Account" asp-action="Login" method="post">
-				@Html.AntiForgeryToken()
+                <form asp-action="Login" method="post">
+                    @Html.AntiForgeryToken()
 				<input type="hidden" asp-for="ReturnUrl" />
 				<div asp-validation-summary="ModelOnly" class="alert alert-danger py-2 small"></div>
+                    <input type="hidden" name="returnUrl" value="@returnUrl" />
 
 				<div class="zalo-input-group">
 					<span class="zalo-input-icon"><i class="bi bi-phone"></i></span>
 					<span class="zalo-country-code">+84 <i class="bi bi-caret-down-fill small text-muted ms-1"></i></span>
 					<input asp-for="EmailOrPhone" class="zalo-input" placeholder="Số điện thoại hoặc Email" autofocus />
-				</div>
+                    <div class="mb-3">
+                        <label class="form-label small fw-semibold">Email</label>
+                        <input type="email" name="email" class="form-control" placeholder="user1@zalo.local" required autofocus />
+                    </div>
 				<span asp-validation-for="EmailOrPhone" class="text-danger small d-block mb-2"></span>
 
 				<div class="zalo-input-group">
 					<span class="zalo-input-icon"><i class="bi bi-lock-fill"></i></span>
 					<input asp-for="Password" class="zalo-input" placeholder="Mật khẩu" />
-				</div>
+                    <div class="mb-3">
+                        <label class="form-label small fw-semibold">Mật khẩu</label>
+                        <input type="password" name="password" class="form-control" placeholder="Mật khẩu mẫu: Test@123" required />
+                    </div>
 				<span asp-validation-for="Password" class="text-danger small d-block mb-2"></span>
 
 				<div class="d-flex justify-content-between align-items-center mb-3">
 					<div class="form-check">
 						<input asp-for="RememberMe" class="form-check-input" />
 						<label asp-for="RememberMe" class="form-check-label small text-muted">Ghi nhớ đăng nhập</label>
-					</div>
+                    <button type="submit" class="btn btn-primary w-100 py-2 fw-semibold">Đăng nhập</button>
+                </form>
+            </div>
 					<a asp-controller="Account" asp-action="ForgotPassword" class="small text-muted text-decoration-none">Quên mật khẩu?</a>
-				</div>
+        </div>
 
 				<button type="submit" class="btn-zalo-primary">
 					Đăng nhập với mật khẩu
-				</button>
-			</form>
+        @if (Model != null && Model.Count > 0)
+        {
+            <div class="card border-0 bg-light rounded-3 p-3">
+                <div class="small fw-bold text-secondary mb-2 text-center">
+                    ⚡ ĐĂNG NHẬP NHANH (MÔI TRƯỜNG DEV / TEST)
+                </div>
+                <div class="d-grid gap-2">
+                    @foreach (var user in Model)
+                    {
+                        <form asp-action="QuickLogin" method="post" class="m-0">
+                            @Html.AntiForgeryToken()
+                            <input type="hidden" name="userId" value="@user.Id" />
+                            <input type="hidden" name="returnUrl" value="@returnUrl" />
+                            <button type="submit" class="btn btn-sm btn-outline-primary w-100 text-start d-flex justify-content-between align-items-center">
+                                <span><strong>@user.DisplayName</strong> <small class="text-muted">(@user.Email)</small></span>
+                                <span class="badge @(user.Role == "Admin" ? "bg-danger" : "bg-secondary")">@user.Role</span>
+                            </button>
+                        </form>
 
 			<div class="text-center mt-4 pt-2 border-top">
 				<span class="text-muted small">Chưa có tài khoản?</span>
 				<a asp-controller="Account" asp-action="Register" class="zalo-link ms-1">
 					Đăng ký tài khoản mới
 				</a>
-			</div>
-		</div>
-	</div>
+                    }
+                </div>
+                <div class="text-center text-muted mt-2" style="font-size: 11px;">
+                    Mật khẩu tất cả tài khoản mẫu: <code>Test@123</code>
+                </div>
+            </div>
+        }
+    </div>
+</div>
 </body>
 </html>
