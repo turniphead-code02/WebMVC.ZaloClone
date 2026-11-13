@@ -1,0 +1,217 @@
+@model ZaloClone.Services.Account.RegisterViewModel
+@{
+	ViewData["Title"] = "Đăng ký tài khoản ZaloClone";
+	Layout = null;
+}
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+	<meta charset="utf-8" />
+	<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+	<title>@ViewData["Title"]</title>
+	<link rel="stylesheet" href="~/lib/bootstrap/dist/css/bootstrap.min.css" />
+	<link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.min.css" rel="stylesheet" />
+	<style>
+			body {
+				background: linear-gradient(180deg, #dcebff 0%, #eef5ff 60%, #e4effe 100%);
+				min-height: 100vh;
+				font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+				display: flex;
+				flex-direction: column;
+				align-items: center;
+				justify-content: center;
+				margin: 0;
+				padding: 24px 16px;
+			}
+
+			.zalo-brand {
+				font-size: 56px;
+				font-weight: 800;
+				letter-spacing: -1.5px;
+				line-height: 1.05;
+				margin-bottom: 12px;
+				text-decoration: none;
+				display: inline-flex;
+				align-items: baseline;
+				user-select: none;
+			}
+
+				.zalo-brand .text-zalo {
+					color: #0068ff;
+				}
+
+				.zalo-brand .text-clone {
+					color: #ffffff;
+					-webkit-text-stroke: 2.5px #0068ff;
+					paint-order: stroke fill;
+					text-shadow: -1.5px -1.5px 0 #0068ff, 1.5px -1.5px 0 #0068ff, -1.5px 1.5px 0 #0068ff, 1.5px 1.5px 0 #0068ff, 0px 2px 6px rgba(0, 104, 255, 0.22);
+					margin-left: 2px;
+				}
+
+			.zalo-subtitle {
+				color: #333;
+				font-size: 16px;
+				text-align: center;
+				line-height: 1.5;
+				margin-bottom: 22px;
+			}
+
+			.account-login-box {
+				background: #ffffff;
+				width: 100%;
+				max-width: 450px;
+				border-radius: 14px;
+				box-shadow: 0 10px 32px rgba(0, 50, 130, 0.08);
+				overflow: hidden;
+			}
+
+			.zalo-card-header {
+				padding: 18px 24px;
+				text-align: center;
+				font-weight: 700;
+				font-size: 16.5px;
+				color: #111;
+				border-bottom: 1px solid #eef0f3;
+			}
+
+			.zalo-card-body {
+				padding: 28px 38px 28px 38px;
+			}
+
+			.zalo-input-group {
+				display: flex;
+				align-items: center;
+				border-bottom: 1px solid #dce1e7;
+				padding: 10px 4px;
+				margin-bottom: 16px;
+				transition: border-color 0.2s;
+			}
+
+				.zalo-input-group:focus-within {
+					border-bottom-color: #0068ff;
+				}
+
+			.zalo-input-icon {
+				color: #555;
+				font-size: 17px;
+				width: 28px;
+				text-align: center;
+				margin-right: 10px;
+			}
+
+			.zalo-country-code {
+				font-weight: 600;
+				font-size: 14.5px;
+				color: #222;
+				padding-right: 14px;
+				margin-right: 14px;
+				border-right: 1px solid #e2e5ea;
+				white-space: nowrap;
+			}
+
+			.zalo-input {
+				border: none;
+				outline: none;
+				width: 100%;
+				font-size: 14.5px;
+				color: #111;
+				background: transparent;
+			}
+
+				.zalo-input::placeholder {
+					color: #9aa2af;
+				}
+
+			.btn-zalo-primary {
+				background-color: #0190f3;
+				border: none;
+				color: #ffffff;
+				font-weight: 600;
+				font-size: 15px;
+				padding: 12px;
+				border-radius: 6px;
+				width: 100%;
+				margin-top: 10px;
+				transition: background-color 0.2s;
+			}
+
+				.btn-zalo-primary:hover {
+					background-color: #0068ff;
+					color: #ffffff;
+				}
+
+			.zalo-link {
+				color: #0068ff;
+				font-size: 13.5px;
+				font-weight: 600;
+				text-decoration: none;
+			}
+
+				.zalo-link:hover {
+					text-decoration: underline;
+				}
+	</style>
+</head>
+<body>
+	<a asp-controller="Account" asp-action="Login" class="zalo-brand">
+		<span class="text-zalo">Zalo</span><span class="text-clone">Clone</span>
+	</a>
+	<div class="zalo-subtitle">
+		Đăng ký tài khoản ZaloClone<br />
+		Mỗi Email hoặc Số điện thoại chỉ tạo được 1 tài khoản duy nhất
+	</div>
+
+	<div class="account-login-box">
+		<div class="zalo-card-header">
+			Tạo tài khoản mới
+		</div>
+
+		<div class="zalo-card-body">
+			<form asp-controller="Account" asp-action="Register" method="post">
+				@Html.AntiForgeryToken()
+				<div asp-validation-summary="ModelOnly" class="alert alert-danger py-2 small"></div>
+
+				<div class="zalo-input-group">
+					<span class="zalo-input-icon"><i class="bi bi-person-fill"></i></span>
+					<input asp-for="DisplayName" class="zalo-input" placeholder="Tên hiển thị trên ZaloClone (VD: An Nguyễn)" />
+				</div>
+				<span asp-validation-for="DisplayName" class="text-danger small d-block mb-2"></span>
+
+				<div class="zalo-input-group">
+					<span class="zalo-input-icon"><i class="bi bi-envelope-fill"></i></span>
+					<input asp-for="Email" class="zalo-input" placeholder="Email đăng nhập (VD: an@example.com)" />
+				</div>
+				<span asp-validation-for="Email" class="text-danger small d-block mb-2"></span>
+
+				<div class="zalo-input-group">
+					<span class="zalo-input-icon"><i class="bi bi-phone"></i></span>
+					<span class="zalo-country-code">+84</span>
+					<input asp-for="PhoneNumber" class="zalo-input" placeholder="Số điện thoại (tra cứu bạn bè)" />
+				</div>
+				<span asp-validation-for="PhoneNumber" class="text-danger small d-block mb-2"></span>
+
+				<div class="zalo-input-group">
+					<span class="zalo-input-icon"><i class="bi bi-lock-fill"></i></span>
+					<input asp-for="Password" class="zalo-input" placeholder="Mật khẩu (ít nhất 6 ký tự)" />
+				</div>
+				<span asp-validation-for="Password" class="text-danger small d-block mb-2"></span>
+
+				<div class="zalo-input-group">
+					<span class="zalo-input-icon"><i class="bi bi-shield-lock-fill"></i></span>
+					<input asp-for="ConfirmPassword" class="zalo-input" placeholder="Nhập lại mật khẩu xác nhận" />
+				</div>
+				<span asp-validation-for="ConfirmPassword" class="text-danger small d-block mb-2"></span>
+
+				<button type="submit" class="btn-zalo-primary">
+					Đăng ký tài khoản
+				</button>
+			</form>
+
+			<div class="text-center mt-4 pt-2 border-top">
+				<span class="text-muted small">Đã có tài khoản ZaloClone?</span>
+				<a asp-controller="Account" asp-action="Login" class="zalo-link ms-1">Đăng nhập ngay</a>
+			</div>
+		</div>
+	</div>
+</body>
+</html>

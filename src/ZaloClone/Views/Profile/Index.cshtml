@@ -1,0 +1,150 @@
+@model ZaloClone.Services.Account.ProfileViewModel
+@{
+    ViewData["Title"] = "Trang cá nhân Zalo";
+    string avatarSrc = string.IsNullOrWhiteSpace(Model.AvatarUrl)
+        ? "https://ui-avatars.com/api/?name=" + Uri.EscapeDataString(Model.DisplayName) + "&background=0068ff&color=fff&size=200"
+        : Model.AvatarUrl;
+}
+
+<!-- Đặt file này tại: src/ZaloClone/Views/Profile/Index.cshtml -->
+<div class="container py-4">
+    <div class="row g-4">
+        <!-- Cột trái: Ảnh đại diện Avatar & Kiểm tra lưu file vật lý -->
+        <div class="col-lg-4">
+            <div class="card shadow-sm border-0 rounded-4 text-center p-4">
+                <div class="position-relative d-inline-block mx-auto mb-3">
+                    <img id="avatarPreview"
+                         src="@avatarSrc"
+                         alt="Avatar của @Model.DisplayName"
+                         class="profile-avatar rounded-circle border shadow-sm"
+                         style="width: 140px; height: 140px; object-fit: cover;" />
+                </div>
+
+                <h5 class="fw-bold mb-1">@Model.DisplayName</h5>
+                <p class="text-muted small mb-2">@Model.Email</p>
+
+                <!-- Hiển thị trạng thái kiểm tra lưu Avatar trên ổ đĩa -->
+                <div class="mb-3">
+                    @if (!string.IsNullOrEmpty(Model.AvatarUrl))
+                    {
+                        if (Model.AvatarFileExistsOnDisk)
+                        {
+                            <span class="badge bg-success-subtle text-success border border-success-subtle">
+                                Đã lưu Avatar: @Model.AvatarUrl (@(Model.AvatarFileSizeBytes / 1024) KB)
+                            </span>
+                        }
+                        else
+                        {
+                            <span class="badge bg-warning-subtle text-warning border border-warning-subtle">
+                                Có đường dẫn DB nhưng chưa thấy file trên đĩa
+                            </span>
+                        }
+                    }
+                    else
+                    {
+                        <span class="badge bg-secondary-subtle text-secondary">Chưa cập nhật ảnh đại diện</span>
+                    }
+                </div>
+
+                <!-- Form cập nhật Avatar gửi tới ProfileController.UpdateAvatar -->
+                <form asp-controller="Profile" asp-action="UpdateAvatar" method="post" enctype="multipart/form-data" class="mt-2">
+                    @Html.AntiForgeryToken()
+                    <div class="mb-2">
+                        <input type="file"
+                               name="avatarFile"
+                               id="avatarFileInput"
+                               accept=".jpg,.jpeg,.png,.webp"
+                               class="form-control form-control-sm"
+                               required />
+                    </div>
+                    <button type="submit" class="btn btn-primary btn-sm w-100 fw-semibold" style="background-color:#0068ff;">
+                        Cập nhật ảnh đại diện (Avatar)
+                    </button>
+                </form>
+
+                <hr class="my-3" />
+
+                <!-- Hộp thông tin UserId để nhóm Kết bạn / Nhắn tin lấy test -->
+                <div class="text-start small bg-light p-3 rounded-3">
+                    <div class="fw-semibold text-secondary mb-1">UserId (UUID cho nhóm Kết bạn/Chat):</div>
+                    <code class="d-block text-break mb-2">@Model.Id</code>
+                    <div class="d-flex justify-content-between text-muted">
+                        <span>Role: <strong>@Model.Role</strong></span>
+                        <a asp-controller="Profile" asp-action="VerifyAvatarAndAuth" target="_blank" class="text-decoration-none">Kiểm tra JSON</a>
+                    </div>
+                </div>
+
+                <div class="d-grid gap-2 mt-3">
+                    <a asp-controller="Profile" asp-action="ChangePassword" class="btn btn-outline-secondary btn-sm">Đổi mật khẩu</a>
+                    <a asp-controller="Friend" asp-action="Search" class="btn btn-outline-primary btn-sm">Sang trang Tìm bạn bè (Test Cặp 2)</a>
+                    <form asp-controller="Account" asp-action="Logout" method="post">
+                        @Html.AntiForgeryToken()
+                        <button type="submit" class="btn btn-danger btn-sm w-100">Đăng xuất</button>
+                    </form>
+                </div>
+            </div>
+        </div>
+
+        <!-- Cột phải: Xem & sửa thông tin cá nhân gửi tới ProfileController.EditProfile -->
+        <div class="col-lg-8">
+            <div class="card shadow-sm border-0 rounded-4 p-4">
+                <h5 class="fw-bold mb-3" style="color:#0068ff;">Thông tin cá nhân</h5>
+
+                @if (TempData["SuccessMessage"] != null)
+                {
+                    <div class="alert alert-success small">@TempData["SuccessMessage"]</div>
+                }
+                @if (TempData["ErrorMessage"] != null)
+                {
+                    <div class="alert alert-danger small">@TempData["ErrorMessage"]</div>
+                }
+
+                <form asp-controller="Profile" asp-action="EditProfile" method="post">
+                    @Html.AntiForgeryToken()
+
+                    <div class="mb-3">
+                        <label class="form-label fw-semibold">Email đăng nhập (Cố định)</label>
+                        <input type="email" class="form-control bg-light" value="@Model.Email" readonly />
+                    </div>
+
+                    <div class="mb-3">
+                        <label asp-for="DisplayName" class="form-label fw-semibold">Tên hiển thị <span class="text-danger">*</span></label>
+                        <input asp-for="DisplayName" class="form-control" required maxlength="100" />
+                    </div>
+
+                    <div class="mb-3">
+                        <label asp-for="PhoneNumber" class="form-label fw-semibold">Số điện thoại</label>
+                        <input asp-for="PhoneNumber" class="form-control" placeholder="0901234567" maxlength="20" />
+                        <div class="form-text">Mỗi số điện thoại chỉ liên kết với 1 tài khoản để tra cứu kết bạn.</div>
+                    </div>
+
+                    <div class="mb-4">
+                        <label asp-for="Bio" class="form-label fw-semibold">Tiểu sử / Giới thiệu bản thân</label>
+                        <textarea asp-for="Bio" class="form-control" rows="3" maxlength="255" placeholder="Xin chào, mình là..."></textarea>
+                    </div>
+
+                    <div class="d-flex justify-content-between align-items-center">
+                        <span class="text-muted small">
+                            Ngày tạo: @Model.CreatedAt.ToOffset(TimeSpan.FromHours(7)).ToString("dd/MM/yyyy HH:mm")
+                        </span>
+                        <button type="submit" class="btn btn-primary px-4 fw-semibold" style="background-color:#0068ff;">
+                            Lưu thông tin
+                        </button>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+    document.getElementById('avatarFileInput')?.addEventListener('change', function (e) {
+        const file = e.target.files[0];
+        if (!file) return;
+        const reader = new FileReader();
+        reader.onload = function (ev) {
+            document.getElementById('avatarPreview').src = ev.target.result;
+        };
+        reader.readAsDataURL(file);
+    });
+</script>

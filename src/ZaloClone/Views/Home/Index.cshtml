@@ -1,8 +1,283 @@
-﻿@{
-    ViewData["Title"] = "Home Page";
+@model ZaloClone.Models.ViewModels.Chat.ChatViewModel
+@{
+    Layout = null;
+    ViewData["Title"] = "Zalo Web Chat";
+    var currentUserId = Model.CurrentUser.Id.ToString();
+    var activeConv = Model.ActiveConversation;
+    var activeConvId = activeConv?.Id.ToString() ?? "";
 }
 
-<div class="text-center">
-    <h1 class="display-4">Welcome</h1>
-    <p>Learn about <a href="https://learn.microsoft.com/aspnet/core">building Web apps with ASP.NET Core</a>.</p>
-</div>
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Zalo Clone - Trò chuyện trực tuyến</title>
+    <!-- Bootstrap 5 CSS -->
+    <link rel="stylesheet" href="~/lib/bootstrap/dist/css/bootstrap.min.css" />
+    <!-- Bootstrap Icons -->
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.min.css" />
+    <!-- Custom 4-Column Chat CSS -->
+    <link rel="stylesheet" href="~/css/chat/chat-layout.css" asp-append-version="true" />
+</head>
+<body class="chat-body" data-user-id="@currentUserId" data-active-conv-id="@activeConvId">
+
+    <div class="chat-app-wrapper">
+
+        <!-- ==================== CỘT 1: MINI SIDEBAR ==================== -->
+        <aside class="mini-sidebar">
+            <div class="top-nav">
+                <!-- Logo Zalo -->
+                <a href="/" class="brand-logo" title="Zalo Clone">
+                    <span>Z</span>
+                </a>
+
+                <!-- Navigation Icons -->
+                <nav class="nav-group">
+                    <a href="/" class="nav-item-btn active" title="Tin nhắn">
+                        <i class="bi bi-chat-dots-fill"></i>
+                    </a>
+                    <a href="/Friend/Search" class="nav-item-btn" title="Tìm & Thêm bạn bè">
+                        <i class="bi bi-person-plus-fill"></i>
+                    </a>
+                    <a href="#" class="nav-item-btn" title="Danh bạ">
+                        <i class="bi bi-person-lines-fill"></i>
+                    </a>
+                    @if (User.IsInRole("Admin"))
+                    {
+                        <a href="/Admin/Admin" class="nav-item-btn text-danger" title="Trang Quản Trị Admin">
+                            <i class="bi bi-shield-lock-fill"></i>
+                        </a>
+                    }
+                </nav>
+            </div>
+
+            <!-- Profile & Logout Bottom -->
+            <div class="user-profile-menu">
+                <div class="avatar-mini" title="@Model.CurrentUser.DisplayName (@Model.CurrentUser.Role)">
+                    @(Model.CurrentUser.DisplayName.Length > 0 ? Model.CurrentUser.DisplayName.Substring(0, 1) : "U")
+                </div>
+                <a href="/Account/Logout" class="nav-item-btn text-danger" title="Đăng xuất">
+                    <i class="bi bi-box-arrow-right"></i>
+                </a>
+            </div>
+        </aside>
+
+
+        <!-- ==================== CỘT 2: CONVERSATIONS LIST ==================== -->
+        <section class="conv-list-panel">
+            <!-- Header -->
+            <div class="conv-header">
+                <div class="title-wrap">
+                    <h4>Messages</h4>
+                    <span class="badge-count">@Model.Conversations.Count</span>
+                </div>
+                <a href="/Friend/Search" class="btn-add-chat" title="Tạo cuộc hội thoại mới">
+                    <i class="bi bi-plus-lg"></i>
+                </a>
+            </div>
+
+            <!-- Search box -->
+            <div class="conv-search-box">
+                <div class="search-inner">
+                    <i class="bi bi-search"></i>
+                    <input type="text" id="searchConvInput" placeholder="Search messages..." />
+                </div>
+            </div>
+
+            <!-- Scrollable list -->
+            <div class="conv-scroll-container">
+                @if (Model.Conversations.Any())
+                {
+                    @foreach (var conv in Model.Conversations)
+                    {
+                        var initial = !string.IsNullOrEmpty(conv.Title) ? conv.Title.Substring(0, 1) : "Z";
+                        <a href="?conversationId=@conv.Id" class="conv-item @(conv.IsActive ? "active" : "")" data-id="@conv.Id">
+                            <div class="conv-avatar-wrap">
+                                <div class="conv-avatar">@initial</div>
+                                @if (conv.IsOnline)
+                                {
+                                    <span class="online-indicator"></span>
+                                }
+                            </div>
+                            <div class="conv-info">
+                                <div class="conv-info-top">
+                                    <span class="conv-name">@conv.Title</span>
+                                    <span class="conv-time">@conv.FormattedTime</span>
+                                </div>
+                                <div class="conv-preview">@conv.LastMessageContent</div>
+                                <div class="conv-tags">
+                                    <span class="conv-tag tag-@conv.TagColor">@conv.TagText</span>
+                                </div>
+                            </div>
+                        </a>
+                    }
+                }
+                else
+                {
+                    <div class="text-center text-muted p-4">
+                        <p class="small">Chưa có cuộc hội thoại nào.</p>
+                        <a href="/Friend/Search" class="btn btn-sm btn-outline-primary">Tìm bạn bè ngay</a>
+                    </div>
+                }
+            </div>
+        </section>
+
+
+        <!-- ==================== CỘT 3: MAIN CHAT AREA ==================== -->
+        <main class="main-chat-panel">
+            @if (activeConv != null)
+            {
+                <!-- Header -->
+                <header class="chat-header">
+                    <div class="user-meta">
+                        <div class="avatar-chat">
+                            @(!string.IsNullOrEmpty(activeConv.Title) ? activeConv.Title.Substring(0, 1) : "C")
+                        </div>
+                        <div class="name-status">
+                            <h5 id="chatHeaderName">@activeConv.Title</h5>
+                            <div class="status-badge">
+                                <span class="dot"></span>
+                                <span>Online</span>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="header-actions">
+                        <button class="btn-call" type="button" title="Bắt đầu cuộc gọi">
+                            <i class="bi bi-telephone-fill"></i>
+                            <span>Call</span>
+                        </button>
+                        <button class="btn-more-options" type="button" title="Tùy chọn">
+                            <i class="bi bi-three-dots-vertical"></i>
+                        </button>
+                    </div>
+                </header>
+
+                <!-- Message stream box -->
+                <div class="chat-stream-box" id="chatStream">
+                    @if (activeConv.Messages.Any())
+                    {
+                        @foreach (var msg in activeConv.Messages)
+                        {
+                            var msgInitial = !string.IsNullOrEmpty(msg.SenderName) ? msg.SenderName.Substring(0, 1) : "U";
+                            <div class="msg-row @(msg.IsSelf ? "outgoing" : "incoming")">
+                                <div class="msg-avatar" title="@msg.SenderName">@msgInitial</div>
+                                <div class="msg-bubble-wrap">
+                                    @if (!msg.IsSelf)
+                                    {
+                                        <div class="msg-sender-name">@msg.SenderName</div>
+                                    }
+                                    <div class="msg-bubble">@msg.Content</div>
+                                    <div class="msg-time">@msg.FormattedTime</div>
+                                </div>
+                            </div>
+                        }
+                    }
+                    else
+                    {
+                        <div class="text-center text-muted py-5">Chưa có tin nhắn nào. Hãy gửi lời chào nhé! 👋</div>
+                    }
+                </div>
+
+                <!-- Input bar -->
+                <footer class="chat-input-bar">
+                    <button class="btn-attach" type="button" title="Đính kèm file/ảnh">
+                        <i class="bi bi-paperclip"></i>
+                    </button>
+                    <input type="text" id="inputMessage" class="input-message-box" placeholder="Type a message..." autocomplete="off" />
+                    <button class="btn-send" id="btnSend" type="button" title="Gửi tin nhắn">
+                        <i class="bi bi-send-fill"></i>
+                    </button>
+                </footer>
+            }
+            else
+            {
+                <div class="d-flex flex-column align-items-center justify-content-center h-100 text-muted">
+                    <i class="bi bi-chat-square-quote display-1 text-secondary opacity-50 mb-3"></i>
+                    <h4>Chào mừng đến với Zalo Clone!</h4>
+                    <p>Chọn một cuộc trò chuyện từ danh sách bên trái để bắt đầu chat.</p>
+                </div>
+            }
+        </main>
+
+
+        <!-- ==================== CỘT 4: DIRECTORY PANEL ==================== -->
+        <aside class="directory-panel">
+            <div class="directory-header">
+                <h5>Directory</h5>
+                <button class="btn-more-options" type="button">
+                    <i class="bi bi-three-dots-vertical"></i>
+                </button>
+            </div>
+
+            <!-- Team Members -->
+            <div class="directory-section">
+                <div class="section-title-wrap">
+                    <h6 class="section-title">Team Members</h6>
+                    <span class="section-badge" id="directoryMemberCount">@(activeConv?.Members.Count ?? 0)</span>
+                </div>
+                <div class="member-list" id="directoryMemberList">
+                    @if (activeConv?.Members.Any() == true)
+                    {
+                        @foreach (var m in activeConv.Members)
+                        {
+                            var mInitial = !string.IsNullOrEmpty(m.DisplayName) ? m.DisplayName.Substring(0, 1) : "U";
+                            <div class="member-item">
+                                <div class="member-avatar">@mInitial</div>
+                                <div class="member-details">
+                                    <h6>@m.DisplayName</h6>
+                                    <p>@m.Bio</p>
+                                </div>
+                            </div>
+                        }
+                    }
+                    else
+                    {
+                        <p class="text-muted small">Không có thành viên.</p>
+                    }
+                </div>
+            </div>
+
+            <!-- Shared Files -->
+            <div class="directory-section">
+                <div class="section-title-wrap">
+                    <h6 class="section-title">Files</h6>
+                    <span class="section-badge" id="directoryFileCount">@(activeConv?.Attachments.Count ?? 0)</span>
+                </div>
+                <div class="file-list" id="directoryFileList">
+                    @if (activeConv?.Attachments.Any() == true)
+                    {
+                        @foreach (var f in activeConv.Attachments)
+                        {
+                            <div class="file-item">
+                                <div class="file-left">
+                                    <div class="file-icon-box icon-box-@f.BadgeColor">
+                                        <i class="bi @f.IconClass"></i>
+                                    </div>
+                                    <div class="file-meta">
+                                        <h6 class="file-name" title="@f.FileName">@f.FileName</h6>
+                                        <p class="file-info">@f.FormattedSize</p>
+                                    </div>
+                                </div>
+                                <a href="/uploads/@f.StorageKey" download class="btn-file-dl" title="Tải về">
+                                    <i class="bi bi-download"></i>
+                                </a>
+                            </div>
+                        }
+                    }
+                    else
+                    {
+                        <p class="text-muted small">Chưa có tệp chia sẻ nào.</p>
+                    }
+                </div>
+            </div>
+        </aside>
+
+    </div>
+
+    <!-- SignalR Client Library -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/microsoft-signalr/8.0.7/signalr.min.js"></script>
+    <!-- Custom Chat Engine JS -->
+    <script src="~/js/chat/chat.js" asp-append-version="true"></script>
+</body>
+</html>

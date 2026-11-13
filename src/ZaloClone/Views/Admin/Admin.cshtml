@@ -1,0 +1,121 @@
+@model IEnumerable<ZaloClone.Models.Entities.User>
+
+@{
+    ViewData["Title"] = "Trang Admin";
+}
+
+<div class="container mt-4">
+    <!-- Tiêu đề và Nút Thoát về Chat ở góc phải -->
+    <div class="d-flex justify-content-between align-items-center mb-3">
+        <h2>Quản lý người dùng</h2>
+        <a href="@Url.Action("Index", "Home")" class="btn btn-outline-secondary d-flex align-items-center gap-2">
+            <i class="bi bi-box-arrow-left"></i> Thoát về Chat
+        </a>
+    </div>
+
+    <!-- Thống kê tổng quan dùng ViewBag -->
+    <div class="row my-3">
+        <div class="col-md-4">
+            <div class="alert alert-primary">Tổng số User: <strong>@ViewBag.TotalUsers</strong></div>
+        </div>
+        <div class="col-md-4">
+            <div class="alert alert-success">Tổng số Nhóm: <strong>@ViewBag.TotalGroups</strong></div>
+        </div>
+        <div class="col-md-4">
+            <div class="alert alert-info">Tổng số Tin nhắn: <strong>@ViewBag.TotalMessages</strong></div>
+        </div>
+    </div>
+
+    <!-- Form Tìm kiếm & Lọc trạng thái -->
+    <form method="get" asp-action="Admin" class="row g-2 mb-3">
+        <div class="col-md-5">
+            <div class="input-group">
+                <span class="input-group-text bg-white"><i class="bi bi-search"></i></span>
+                <input type="text" name="searchTerm" class="form-control" placeholder="Tìm theo tên hoặc email..." value="@ViewBag.SearchTerm" />
+            </div>
+        </div>
+        <div class="col-md-3">
+            <select name="statusFilter" class="form-select">
+                <option value="All" selected="@(ViewBag.StatusFilter == "All")">Tất cả trạng thái</option>
+                <option value="Active" selected="@(ViewBag.StatusFilter == "Active")">Hoạt động</option>
+                <option value="Locked" selected="@(ViewBag.StatusFilter == "Locked")">Đã khóa</option>
+            </select>
+        </div>
+        <div class="col-md-4 d-flex gap-2">
+            <button type="submit" class="btn btn-primary">Lọc</button>
+            <a href="@Url.Action("Admin", "Admin")" class="btn btn-outline-secondary">Đặt lại</a>
+        </div>
+    </form>
+
+    <!-- Bảng danh sách tài khoản -->
+    <table class="table table-bordered mt-3">
+        <thead>
+            <tr>
+                <th>Email</th>
+                <th>Tên hiển thị</th>
+                <th>Trạng thái</th>
+                <th>Hành động</th>
+            </tr>
+        </thead>
+        <tbody>
+            @foreach (var user in Model)
+            {
+                <tr>
+                    <td>@user.Email</td>
+                    <td>@user.DisplayName</td>
+                    <td>
+                        @if (user.IsLocked)
+                        {
+                            <span class="text-danger">Đã khóa</span>
+                        }
+                        else
+                        {
+                            <span class="text-success">Hoạt động</span>
+                        }
+                    </td>
+                    <td>
+                        @if (user.Role != "Admin")
+                        {
+                            <form asp-action="ToggleLock" method="post" style="display:inline;">
+                                @Html.AntiForgeryToken()
+                                <input type="hidden" name="userId" value="@user.Id" />
+                                @if (!user.IsLocked)
+                                {
+                                    <button type="submit" class="btn btn-danger btn-sm">Khóa</button>
+                                }
+                                else
+                                {
+                                    <button type="submit" class="btn btn-success btn-sm">Mở khóa</button>
+                                }
+                            </form>
+                        }
+                    </td>
+                </tr>
+            }
+        </tbody>
+    </table>
+
+    <!-- Phân trang số 1, 2, 3... -->
+    @if (ViewBag.TotalPages > 1)
+    {
+        <div class="d-flex justify-content-between align-items-center mt-3 pt-3 border-top">
+            <div class="small text-muted">Trang @ViewBag.CurrentPage / @ViewBag.TotalPages</div>
+            <nav>
+                <ul class="pagination pagination-sm mb-0">
+                    <li class="page-item @(ViewBag.CurrentPage == 1 ? "disabled" : "")">
+                        <a class="page-link" href="@Url.Action("Admin", "Admin", new { searchTerm = ViewBag.SearchTerm, statusFilter = ViewBag.StatusFilter, page = ViewBag.CurrentPage - 1 })">Trước</a>
+                    </li>
+                    @for (int i = 1; i <= ViewBag.TotalPages; i++)
+                    {
+                        <li class="page-item @(i == ViewBag.CurrentPage ? "active" : "")">
+                            <a class="page-link" href="@Url.Action("Admin", "Admin", new { searchTerm = ViewBag.SearchTerm, statusFilter = ViewBag.StatusFilter, page = i })">@i</a>
+                        </li>
+                    }
+                    <li class="page-item @(ViewBag.CurrentPage == ViewBag.TotalPages ? "disabled" : "")">
+                        <a class="page-link" href="@Url.Action("Admin", "Admin", new { searchTerm = ViewBag.SearchTerm, statusFilter = ViewBag.StatusFilter, page = ViewBag.CurrentPage + 1 })">Sau</a>
+                    </li>
+                </ul>
+            </nav>
+        </div>
+    }
+</div>

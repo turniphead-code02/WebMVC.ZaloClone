@@ -1,13 +1,36 @@
+@using ZaloClone.Infrastructure
 <!DOCTYPE html>
-<html lang="en">
+<html lang="vi">
 <head>
-    <meta charset="utf-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>@ViewData["Title"] - ZaloClone</title>
-    <script type="importmap"></script>
-    <link rel="stylesheet" href="~/lib/bootstrap/dist/css/bootstrap.min.css" />
-    <link rel="stylesheet" href="~/css/site.css" asp-append-version="true" />
-    <link rel="stylesheet" href="~/ZaloClone.styles.css" asp-append-version="true" />
+	<meta charset="utf-8" />
+	<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+	<title>@ViewData["Title"] - ZaloClone</title>
+	<script type="importmap"></script>
+	<link rel="stylesheet" href="~/lib/bootstrap/dist/css/bootstrap.min.css" />
+	<link rel="stylesheet" href="~/css/site.css" asp-append-version="true" />
+	<link rel="stylesheet" href="~/ZaloClone.styles.css" asp-append-version="true" />
+	<style>
+			.navbar-brand-zalo {
+				font-size: 26px;
+				font-weight: 800;
+				letter-spacing: -0.8px;
+				text-decoration: none;
+				display: inline-flex;
+				align-items: baseline;
+			}
+
+				.navbar-brand-zalo .text-zalo {
+					color: #0068ff;
+				}
+
+				.navbar-brand-zalo .text-clone {
+					color: #ffffff;
+					-webkit-text-stroke: 1.6px #0068ff;
+					paint-order: stroke fill;
+					text-shadow: -1px -1px 0 #0068ff, 1px -1px 0 #0068ff, -1px 1px 0 #0068ff, 1px 1px 0 #0068ff;
+					margin-left: 1px;
+				}
+	</style>
 </head>
 <body>
     <header>
@@ -30,6 +53,24 @@
                             <a class="nav-link text-dark" asp-area="" asp-controller="Home" asp-action="Privacy">Quy định</a>
                         </li>
                     </ul>
+                    <ul class="navbar-nav">
+                        @if (User.Identity?.IsAuthenticated == true)
+                        {
+                            <li class="nav-item d-flex align-items-center me-3">
+                                <span class="badge bg-primary me-2">Online</span>
+                                <span class="fw-semibold">@User.Identity.Name</span>
+                            </li>
+                            <li class="nav-item">
+                                <a class="btn btn-outline-danger btn-sm" asp-controller="Account" asp-action="Logout">Đăng xuất</a>
+                            </li>
+                        }
+                        else
+                        {
+                            <li class="nav-item">
+                                <a class="btn btn-primary btn-sm" asp-controller="Account" asp-action="Login">Đăng nhập</a>
+                            </li>
+                        }
+                    </ul>
                 </div>
             </div>
         </nav>
@@ -39,15 +80,77 @@
             @RenderBody()
         </main>
     </div>
+	<header>
+		<nav class="navbar navbar-expand-sm navbar-toggleable-sm navbar-light bg-white border-bottom box-shadow mb-3">
+			<div class="container">
+				<a class="navbar-brand navbar-brand-zalo me-4" asp-area="" asp-controller="Home" asp-action="Index">
+					<span class="text-zalo">Zalo</span><span class="text-clone">Clone</span>
+				</a>
+				<button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target=".navbar-collapse" aria-controls="navbarSupportedContent"
+						aria-expanded="false" aria-label="Toggle navigation">
+					<span class="navbar-toggler-icon"></span>
+				</button>
+				<div class="navbar-collapse collapse d-sm-inline-flex justify-content-between">
+					<ul class="navbar-nav flex-grow-1 align-items-center">
+						<li class="nav-item">
+							<a class="nav-link text-dark fw-medium" asp-area="" asp-controller="Home" asp-action="Index">Trang chủ</a>
+						</li>
+						@if (User.Identity?.IsAuthenticated == true)
+						{
+							<li class="nav-item">
+								<a class="nav-link text-dark fw-medium" asp-area="" asp-controller="Friend" asp-action="Search">Tìm &amp; Kết bạn</a>
+							</li>
+							<li class="nav-item">
+								<a class="nav-link text-dark fw-medium" asp-area="" asp-controller="Profile" asp-action="Index">Trang cá nhân</a>
+							</li>
+						}
+					</ul>
 
-    <footer class="border-top footer text-muted">
-        <div class="container">
-            &copy; 2026 - ZaloClone - <a asp-area="" asp-controller="Home" asp-action="Privacy">Privacy</a>
-        </div>
-    </footer>
-    <script src="~/lib/jquery/dist/jquery.min.js"></script>
-    <script src="~/lib/bootstrap/dist/js/bootstrap.bundle.min.js"></script>
-    <script src="~/js/site.js" asp-append-version="true"></script>
-    @await RenderSectionAsync("Scripts", required: false)
+					<!-- Khu vực nút Đăng nhập / Đăng ký / Thông tin tài khoản góc phải -->
+					<ul class="navbar-nav align-items-center gap-2">
+						@if (User.Identity?.IsAuthenticated == true)
+						{
+							<li class="nav-item">
+								<a class="btn btn-outline-primary btn-sm fw-semibold" asp-controller="Profile" asp-action="Index">
+									Xin chào, @User.GetDisplayName()
+								</a>
+							</li>
+							<li class="nav-item">
+								<form asp-controller="Account" asp-action="Logout" method="post" class="d-inline">
+									@Html.AntiForgeryToken()
+									<button type="submit" class="btn btn-danger btn-sm fw-semibold">Đăng xuất</button>
+								</form>
+							</li>
+						}
+						else
+						{
+							<li class="nav-item">
+								<a class="btn btn-outline-primary btn-sm px-3 fw-semibold" asp-controller="Account" asp-action="Login">Đăng nhập</a>
+							</li>
+							<li class="nav-item">
+								<a class="btn btn-primary btn-sm px-3 fw-semibold" style="background-color:#0068ff;" asp-controller="Account" asp-action="Register">Đăng ký</a>
+							</li>
+						}
+					</ul>
+				</div>
+			</div>
+		</nav>
+	</header>
+	<div class="container">
+		<main role="main" class="pb-3">
+			@RenderBody()
+		</main>
+	</div>
+
+	<footer class="border-top footer text-muted">
+		<div class="container">
+			&copy; 2026 - ZaloClone
+		</div>
+	</footer>
+	<script src="~/lib/jquery/dist/jquery.min.js"></script>
+	<script src="~/lib/bootstrap/dist/js/bootstrap.bundle.min.js"></script>
+	<script src="~/js/site.js" asp-append-version="true"></script>
+	@await RenderSectionAsync("Scripts", required: false)
 </body>
 </html>
+5
