@@ -40,8 +40,8 @@
                     <a href="/Friend/Search" class="nav-item-btn" title="Tìm & Thêm bạn bè">
                         <i class="bi bi-person-plus-fill"></i>
                     </a>
-                    <a href="#" class="nav-item-btn" title="Danh bạ">
-                        <i class="bi bi-person-lines-fill"></i>
+                    <a href="/Profile" class="nav-item-btn" title="Thông tin cá nhân">
+                        <i class="bi bi-person-badge-fill"></i>
                     </a>
                     @if (User.IsInRole("Admin"))
                     {
@@ -54,9 +54,9 @@
 
             <!-- Profile & Logout Bottom -->
             <div class="user-profile-menu">
-                <div class="avatar-mini" title="@Model.CurrentUser.DisplayName (@Model.CurrentUser.Role)">
+                <a href="/Profile" class="avatar-mini text-decoration-none" title="@Model.CurrentUser.DisplayName (Trang cá nhân)">
                     @(Model.CurrentUser.DisplayName.Length > 0 ? Model.CurrentUser.DisplayName.Substring(0, 1) : "U")
-                </div>
+                </a>
                 <a href="/Account/Logout" class="nav-item-btn text-danger" title="Đăng xuất">
                     <i class="bi bi-box-arrow-right"></i>
                 </a>
@@ -72,9 +72,9 @@
                     <h4>Messages</h4>
                     <span class="badge-count">@Model.Conversations.Count</span>
                 </div>
-                <a href="/Friend/Search" class="btn-add-chat" title="Tạo cuộc hội thoại mới">
+                <button type="button" class="btn-add-chat" data-bs-toggle="modal" data-bs-target="#createGroupModal" title="Tạo nhóm trò chuyện mới">
                     <i class="bi bi-plus-lg"></i>
-                </a>
+                </button>
             </div>
 
             <!-- Search box -->
@@ -181,9 +181,10 @@
 
                 <!-- Input bar -->
                 <footer class="chat-input-bar">
-                    <button class="btn-attach" type="button" title="Đính kèm file/ảnh">
+                    <button class="btn-attach" id="btnAttach" type="button" title="Đính kèm file/ảnh">
                         <i class="bi bi-paperclip"></i>
                     </button>
+                    <input type="file" id="fileAttachmentInput" style="display: none;" />
                     <input type="text" id="inputMessage" class="input-message-box" placeholder="Type a message..." autocomplete="off" />
                     <button class="btn-send" id="btnSend" type="button" title="Gửi tin nhắn">
                         <i class="bi bi-send-fill"></i>
@@ -275,6 +276,36 @@
 
     </div>
 
+    <!-- MODAL TẠO NHÓM CHAT MỚI -->
+    <div class="modal fade" id="createGroupModal" tabindex="-1" aria-labelledby="createGroupModalLabel" aria-hidden="true">
+        <div class="modal-dialog modal-dialog-centered">
+            <div class="modal-content rounded-4 border-0 shadow">
+                <div class="modal-header border-bottom-0 pb-0">
+                    <h5 class="modal-title fw-bold" id="createGroupModalLabel">Tạo nhóm trò chuyện</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+                </div>
+                <div class="modal-body">
+                    <div class="mb-3">
+                        <label class="form-label small fw-semibold">Tên nhóm</label>
+                        <input type="text" id="newGroupTitle" class="form-control rounded-3" placeholder="Nhập tên nhóm trò chuyện..." required />
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label small fw-semibold">Chọn bạn bè vào nhóm</label>
+                        <div id="friendsSelectionList" class="border rounded-3 p-2" style="max-height: 220px; overflow-y: auto;">
+                            <div class="text-center text-muted py-3 small">Đang tải danh sách bạn bè...</div>
+                        </div>
+                    </div>
+                </div>
+                <div class="modal-footer border-top-0 pt-0">
+                    <button type="button" class="btn btn-light rounded-pill px-3" data-bs-dismiss="modal">Hủy</button>
+                    <button type="button" id="btnSubmitCreateGroup" class="btn btn-primary rounded-pill px-4">Tạo nhóm</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Bootstrap 5 JS Bundle -->
+    <script src="~/lib/bootstrap/dist/js/bootstrap.bundle.min.js"></script>
     <!-- SignalR Client Library -->
     <script src="https://cdnjs.cloudflare.com/ajax/libs/microsoft-signalr/8.0.7/signalr.min.js"></script>
     <!-- Custom Chat Engine JS -->
