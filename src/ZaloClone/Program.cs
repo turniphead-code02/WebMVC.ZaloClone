@@ -6,7 +6,11 @@ using ZaloClone.Data;
 using ZaloClone.Hubs;
 using ZaloClone.Infrastructure;
 using ZaloClone.Models.Entities;
+using ZaloClone.Services.Account;
+using ZaloClone.Services.Admin;
+using ZaloClone.Services.Chat;
 using ZaloClone.Services.Friend;
+using ZaloClone.Services.Group;
 using ZaloClone.Services.Storage;
 
 var builder = WebApplication.CreateBuilder(args);
@@ -69,8 +73,18 @@ builder.Services.AddAuthorization();
 builder.Services.AddScoped<IPasswordHasher<User>, PasswordHasher<User>>();
 builder.Services.AddScoped<IFileStorageService, LocalFileStorageService>();
 
+// Cặp 1: Dịch vụ tài khoản & trang cá nhân
+builder.Services.AddScoped<IAccountService, AccountService>();
+
 // Cặp 2: Dịch vụ bạn bè & lời mời kết bạn
 builder.Services.AddScoped<IFriendRequestService, FriendRequestService>();
+
+// Cặp 3: Dịch vụ chat thời gian thực & tệp đính kèm
+builder.Services.AddScoped<IChatService, ChatService>();
+
+// Cặp 4: Dịch vụ quản trị Admin & Chat nhóm
+builder.Services.AddScoped<IAdminService, AdminService>();
+builder.Services.AddScoped<IGroupService, GroupService>();
 
 // 4. SignalR Real-time
 builder.Services.AddSignalR();
@@ -113,6 +127,7 @@ app.MapControllerRoute(
     .WithStaticAssets();
 
 // Endpoint SignalR
+app.MapHub<ChatHub>("/chathub");
 app.MapHub<ChatHub>("/hubs/chat");
 
 app.Run();

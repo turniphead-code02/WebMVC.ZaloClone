@@ -1,0 +1,125 @@
+@model IEnumerable<ZaloClone.Models.Entities.Conversation>
+
+@{
+    ViewData["Title"] = "Quản lý Nhóm Chat";
+}
+
+<div class="container mt-4 mb-5">
+    <!-- Tiêu đề và Tab chuyển đổi -->
+    <div class="d-flex justify-content-between align-items-center mb-3">
+        <div class="d-flex align-items-center gap-4">
+            <h3 class="mb-0">
+                <a href="@Url.Action("Admin", "Admin")" class="text-decoration-none text-muted">Quản lý người dùng</a>
+            </h3>
+            <h3 class="mb-0 text-primary border-bottom border-primary border-3 pb-1">Quản lý nhóm</h3>
+        </div>
+        <a href="@Url.Action("Index", "Home")" class="btn btn-outline-secondary d-flex align-items-center gap-2">
+            <i class="bi bi-box-arrow-left"></i> Thoát về Chat
+        </a>
+    </div>
+
+    <!-- Thống kê tổng quan -->
+    <div class="row my-3">
+        <div class="col-md-4">
+            <div class="alert alert-primary">Tổng số User: <strong>@ViewBag.TotalUsers</strong></div>
+        </div>
+        <div class="col-md-4">
+            <div class="alert alert-success">Tổng số Nhóm: <strong>@ViewBag.TotalGroups</strong></div>
+        </div>
+        <div class="col-md-4">
+            <div class="alert alert-info">Tổng số Tin nhắn: <strong>@ViewBag.TotalMessages</strong></div>
+        </div>
+    </div>
+
+    <!-- Form Tìm kiếm & Lọc trạng thái Nhóm -->
+    <form method="get" asp-action="ManageGroups" class="row g-2 mb-3">
+        <div class="col-md-5">
+            <div class="input-group">
+                <span class="input-group-text bg-white"><i class="bi bi-search"></i></span>
+                <input type="text" name="searchGroup" class="form-control" placeholder="Tìm theo tên nhóm..." value="@ViewBag.SearchGroup" />
+            </div>
+        </div>
+        <div class="col-md-3">
+            <select name="groupStatusFilter" class="form-select">
+                <option value="All" selected="@(ViewBag.GroupStatusFilter == "All")">Tất cả trạng thái</option>
+                <option value="Active" selected="@(ViewBag.GroupStatusFilter == "Active")">Đang hoạt động</option>
+                <option value="Inactive" selected="@(ViewBag.GroupStatusFilter == "Inactive")">Không hoạt động</option>
+            </select>
+        </div>
+        <div class="col-md-4 d-flex gap-2">
+            <button type="submit" class="btn btn-primary">Lọc</button>
+            <a href="@Url.Action("ManageGroups", "Admin")" class="btn btn-outline-secondary">Đặt lại</a>
+        </div>
+    </form>
+
+    <!-- Bảng danh sách Nhóm Chat -->
+    <table class="table table-striped table-bordered align-middle mt-2">
+        <thead class="table-dark">
+            <tr>
+                <th>ID Nhóm</th>
+                <th>Tên Nhóm</th>
+                <th>Trưởng nhóm</th>
+                <th>Thành viên</th>
+                <th>Ngày tạo</th>
+                <th>Trạng thái</th>
+            </tr>
+        </thead>
+        <tbody>
+            @if (Model != null && Model.Any())
+            {
+                foreach (var group in Model)
+                {
+                    <tr>
+                        <td><code>@group.Id</code></td>
+                        <td class="fw-medium">@(string.IsNullOrEmpty(group.Title) ? "Nhóm không tên" : group.Title)</td>
+                        <td>@(group.CreatedBy != null ? group.CreatedBy.DisplayName : "Không rõ")</td>
+                        <td>
+                            <span class="badge bg-info text-dark">@(group.Members != null ? group.Members.Count : 0) thành viên</span>
+                        </td>
+                        <td>@group.CreatedAt.ToString("dd/MM/yyyy HH:mm")</td>
+                        <td>
+                            @if (group.Members != null && group.Members.Any())
+                            {
+                                <span class="badge bg-success">Đang hoạt động</span>
+                            }
+                            else
+                            {
+                                <span class="badge bg-secondary">Không hoạt động</span>
+                            }
+                        </td>
+                    </tr>
+                }
+            }
+            else
+            {
+                <tr>
+                    <td colspan="6" class="text-center text-muted py-3">Không tìm thấy nhóm chat nào.</td>
+                </tr>
+            }
+        </tbody>
+    </table>
+
+    <!-- Phân trang -->
+    @if (ViewBag.TotalPages > 1)
+    {
+        <div class="d-flex justify-content-between align-items-center mt-3 pt-3 border-top">
+            <div class="small text-muted">Trang @ViewBag.CurrentPage / @ViewBag.TotalPages</div>
+            <nav>
+                <ul class="pagination pagination-sm mb-0">
+                    <li class="page-item @(ViewBag.CurrentPage == 1 ? "disabled" : "")">
+                        <a class="page-link" href="@Url.Action("ManageGroups", "Admin", new { searchGroup = ViewBag.SearchGroup, groupStatusFilter = ViewBag.GroupStatusFilter, page = ViewBag.CurrentPage - 1 })">Trước</a>
+                    </li>
+                    @for (int i = 1; i <= ViewBag.TotalPages; i++)
+                    {
+                        <li class="page-item @(i == ViewBag.CurrentPage ? "active" : "")">
+                            <a class="page-link" href="@Url.Action("ManageGroups", "Admin", new { searchGroup = ViewBag.SearchGroup, groupStatusFilter = ViewBag.GroupStatusFilter, page = i })">@i</a>
+                        </li>
+                    }
+                    <li class="page-item @(ViewBag.CurrentPage == ViewBag.TotalPages ? "disabled" : "")">
+                        <a class="page-link" href="@Url.Action("ManageGroups", "Admin", new { searchGroup = ViewBag.SearchGroup, groupStatusFilter = ViewBag.GroupStatusFilter, page = ViewBag.CurrentPage + 1 })">Sau</a>
+                    </li>
+                </ul>
+            </nav>
+        </div>
+    }
+</div>
