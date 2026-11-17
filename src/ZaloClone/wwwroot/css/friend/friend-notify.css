@@ -1,0 +1,51 @@
+/* Badge trên icon Bạn bè */
+.friend-nav-badge {
+    position: absolute;
+    top: -4px;
+    right: -4px;
+    min-width: 18px;
+    height: 18px;
+    padding: 0 5px;
+    border-radius: 9px;
+    background: #ef4444;
+    color: #fff;
+    font-size: 11px;
+    font-weight: 700;
+    line-height: 18px;
+    text-align: center;
+    pointer-events: none;
+}
+
+    .friend-nav-badge[hidden] {
+        display: none;
+    }
+
+/* Toast thông báo góc phải dưới */
+.friend-toast-host {
+    position: fixed;
+    right: 16px;
+    bottom: 16px;
+    z-index: 2000;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    max-width: 320px;
+}
+
+.friend-toast {
+    background: #fff;
+    border-left: 4px solid #0068ff;
+    border-radius: 8px;
+    box-shadow: 0 4px 16px rgba(0, 0, 0, .18);
+    padding: 10px 14px;
+}
+
+.friend-toast-title {
+    font-weight: 600;
+    font-size: .9rem;
+}
+
+.friend-toast-body {
+    font-size: .85rem;
+    color: #475569;
+}
