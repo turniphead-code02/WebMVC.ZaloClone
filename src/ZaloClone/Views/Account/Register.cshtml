@@ -44,7 +44,7 @@
 					color: #ffffff;
 					-webkit-text-stroke: 2.5px #0068ff;
 					paint-order: stroke fill;
-					text-shadow: -1.5px -1.5px 0 #0068ff, 1.5px -1.5px 0 #0068ff, -1.5px 1.5px 0 #0068ff, 1.5px 1.5px 0 #0068ff, 0px 2px 6px rgba(0, 104, 255, 0.22);
+					text-shadow: -1.5px -1.5px 0 #0068ff, 1.5px -1.5px 0 #0068ff, -1.5px 1.5px 0 #0068ff, 1.5px 1.5px 0 #0068ff;
 					margin-left: 2px;
 				}
 
@@ -75,7 +75,7 @@
 			}
 
 			.zalo-card-body {
-				padding: 28px 38px 28px 38px;
+				padding: 26px 38px 28px 38px;
 			}
 
 			.zalo-input-group {
@@ -83,8 +83,7 @@
 				align-items: center;
 				border-bottom: 1px solid #dce1e7;
 				padding: 10px 4px;
-				margin-bottom: 16px;
-				transition: border-color 0.2s;
+				margin-bottom: 14px;
 			}
 
 				.zalo-input-group:focus-within {
@@ -118,10 +117,6 @@
 				background: transparent;
 			}
 
-				.zalo-input::placeholder {
-					color: #9aa2af;
-				}
-
 			.btn-zalo-primary {
 				background-color: #0190f3;
 				border: none;
@@ -132,7 +127,6 @@
 				border-radius: 6px;
 				width: 100%;
 				margin-top: 10px;
-				transition: background-color 0.2s;
 			}
 
 				.btn-zalo-primary:hover {
@@ -147,12 +141,58 @@
 				text-decoration: none;
 			}
 
-				.zalo-link:hover {
-					text-decoration: underline;
-				}
+			.zalo-toast-container {
+				position: fixed;
+				top: 20px;
+				right: 20px;
+				z-index: 9999;
+				display: flex;
+				flex-direction: column;
+				gap: 10px;
+				max-width: 400px;
+			}
+
+			.zalo-toast-item {
+				display: flex;
+				align-items: center;
+				gap: 12px;
+				padding: 14px 18px;
+				border-radius: 12px;
+				color: #ffffff;
+				font-size: 14.5px;
+				font-weight: 500;
+				box-shadow: 0 10px 28px rgba(0, 0, 0, 0.16);
+			}
+
+			.zalo-toast-success {
+				background: linear-gradient(135deg, #10b981 0%, #059669 100%);
+			}
+
+			.zalo-toast-error {
+				background: linear-gradient(135deg, #ef4444 0%, #dc2626 100%);
+			}
 	</style>
 </head>
 <body>
+	<div class="zalo-toast-container">
+		@if (TempData["SuccessMessage"] != null)
+		{
+			<div class="zalo-toast-item zalo-toast-success">
+				<i class="bi bi-check-circle-fill fs-5"></i>
+				<div class="flex-grow-1">@TempData["SuccessMessage"]</div>
+				<button type="button" class="btn-close btn-close-white btn-sm" onclick="this.parentElement.remove()"></button>
+			</div>
+		}
+		@if (TempData["ErrorMessage"] != null)
+		{
+			<div class="zalo-toast-item zalo-toast-error">
+				<i class="bi bi-exclamation-triangle-fill fs-5"></i>
+				<div class="flex-grow-1">@TempData["ErrorMessage"]</div>
+				<button type="button" class="btn-close btn-close-white btn-sm" onclick="this.parentElement.remove()"></button>
+			</div>
+		}
+	</div>
+
 	<a asp-controller="Account" asp-action="Login" class="zalo-brand">
 		<span class="text-zalo">Zalo</span><span class="text-clone">Clone</span>
 	</a>
@@ -162,9 +202,7 @@
 	</div>
 
 	<div class="account-login-box">
-		<div class="zalo-card-header">
-			Tạo tài khoản mới
-		</div>
+		<div class="zalo-card-header">Tạo tài khoản mới</div>
 
 		<div class="zalo-card-body">
 			<form asp-controller="Account" asp-action="Register" method="post">
@@ -173,9 +211,15 @@
 
 				<div class="zalo-input-group">
 					<span class="zalo-input-icon"><i class="bi bi-person-fill"></i></span>
-					<input asp-for="DisplayName" class="zalo-input" placeholder="Tên hiển thị trên ZaloClone (VD: An Nguyễn)" />
+					<input asp-for="DisplayName" class="zalo-input" placeholder="Tên hiển thị (VD: An Nguyễn)" />
 				</div>
 				<span asp-validation-for="DisplayName" class="text-danger small d-block mb-2"></span>
+
+				<div class="zalo-input-group">
+					<span class="zalo-input-icon"><i class="bi bi-calendar-event-fill"></i></span>
+					<input asp-for="DateOfBirth" type="date" class="zalo-input" max="@DateTime.Today.ToString("yyyy-MM-dd")" />
+				</div>
+				<span asp-validation-for="DateOfBirth" class="text-danger small d-block mb-2"></span>
 
 				<div class="zalo-input-group">
 					<span class="zalo-input-icon"><i class="bi bi-envelope-fill"></i></span>
@@ -202,9 +246,7 @@
 				</div>
 				<span asp-validation-for="ConfirmPassword" class="text-danger small d-block mb-2"></span>
 
-				<button type="submit" class="btn-zalo-primary">
-					Đăng ký tài khoản
-				</button>
+				<button type="submit" class="btn-zalo-primary">Đăng ký tài khoản</button>
 			</form>
 
 			<div class="text-center mt-4 pt-2 border-top">
@@ -213,5 +255,15 @@
 			</div>
 		</div>
 	</div>
+
+	<script>
+			setTimeout(function () {
+				document.querySelectorAll('.zalo-toast-item').forEach(function (el) {
+					el.style.transition = 'opacity 0.4s ease';
+					el.style.opacity = '0';
+					setTimeout(function () { el.remove(); }, 400);
+				});
+			}, 4500);
+	</script>
 </body>
 </html>

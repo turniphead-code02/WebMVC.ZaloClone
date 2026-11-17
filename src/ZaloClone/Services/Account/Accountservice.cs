@@ -5,6 +5,7 @@ using System.ComponentModel.DataAnnotations;
 using System.IO;
 using System.Linq;
 using System.Security.Claims;
+using System.Text.Json;
 using System.Threading.Tasks;
 using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.Authentication.Cookies;
@@ -12,7 +13,6 @@ using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.EntityFrameworkCore;
-using Microsoft.Extensions.Logging;
 using ZaloClone.Data;
 using ZaloClone.Infrastructure;
 using ZaloClone.Models.Entities;
@@ -20,10 +20,6 @@ using ZaloClone.Services.Storage;
 
 namespace ZaloClone.Services.Account;
 
-/// <summary>
-/// Interface nghiệp vụ cho Cặp 1 (Tài khoản &amp; Trang cá nhân).
-/// Đặt tại: src/ZaloClone/Services/Account/AccountService.cs
-/// </summary>
 public interface IAccountService
 {
     Task<ApiResponse<User>> RegisterAsync(RegisterViewModel model);
@@ -31,127 +27,112 @@ public interface IAccountService
     Task UpdateLastActiveAsync(Guid userId);
     Task<ApiResponse<string>> GenerateForgotPasswordOtpAsync(string emailOrPhone);
     Task<ApiResponse> ResetPasswordWithOtpAsync(ResetPasswordViewModel model);
-    Task<ProfileViewModel?> GetProfileAsync(Guid userId);
+    Task<ProfileViewModel?> GetProfileAsync(Guid targetUserId, Guid currentUserId);
     Task<ApiResponse<User>> UpdateProfileAsync(Guid userId, ProfileViewModel model);
-    Task<ApiResponse<(User User, string RelativeUrl, long FileSizeBytes)>> UpdateAvatarAsync(Guid userId, IFormFile? avatarFile);
+    Task<ApiResponse<User>> UpdateAvatarAsync(Guid userId, IFormFile? avatarFile);
+    Task<ApiResponse<User>> DeleteAvatarAsync(Guid userId);
+    Task<ApiResponse<string>> UpdateCoverAsync(Guid userId, IFormFile? coverFile);
+    Task<ApiResponse> DeleteCoverAsync(Guid userId);
     Task<ApiResponse<User>> ChangePasswordAsync(Guid userId, ChangePasswordViewModel model);
-    bool CheckPhysicalAvatarExists(string? avatarUrl, out long fileSizeBytes);
     Task SignInUserAsync(HttpContext httpContext, User user, bool isPersistent);
 }
 
-/// <summary>
-/// Thực thi toàn bộ nghiệp vụ Tài khoản &amp; Trang cá nhân (Mục 6 CONVENTIONS.md: Controller mỏng, logic viết trong Services/Account/).
-/// </summary>
 public class AccountService : IAccountService
 {
+    private static readonly ConcurrentDictionary<string, (string Otp, DateTimeOffset ExpiresAt)> _otpStore = new();
+    private static readonly string[] _allowedExtensions = [".jpg", ".jpeg", ".png", ".webp"];
+
     private readonly AppDbContext _db;
     private readonly IPasswordHasher<User> _passwordHasher;
     private readonly IFileStorageService _fileStorageService;
     private readonly IWebHostEnvironment _env;
-    private readonly ILogger<AccountService> _logger;
-
-    // Lưu OTP Quên mật khẩu tạm thời (10 phút) trong bộ nhớ để không phải sửa bảng DB
-    private static readonly ConcurrentDictionary<string, (string Otp, DateTimeOffset ExpiresAt)> _otpStore = new();
 
     public AccountService(
         AppDbContext db,
         IPasswordHasher<User> passwordHasher,
         IFileStorageService fileStorageService,
-        IWebHostEnvironment env,
-        ILogger<AccountService> logger)
+        IWebHostEnvironment env)
     {
         _db = db;
         _passwordHasher = passwordHasher;
         _fileStorageService = fileStorageService;
         _env = env;
-        _logger = logger;
     }
 
-    // 1. ĐĂNG KÝ (BR-01 -> BR-05)
     public async Task<ApiResponse<User>> RegisterAsync(RegisterViewModel model)
     {
-        var normalizedEmail = model.Email.Trim().ToLowerInvariant();
+        await _db.Database.MigrateAsync();
 
-        string? normalizedPhone = null;
-        if (!string.IsNullOrWhiteSpace(model.PhoneNumber))
-        {
-            normalizedPhone = NormalizePhone(model.PhoneNumber);
-            if (normalizedPhone == null)
-            {
-                return ApiResponse<User>.Fail("Số điện thoại không hợp lệ (chỉ gồm 9-11 chữ số, ví dụ 0901234567).");
-            }
-        }
-
-        var trimmedDisplayName = model.DisplayName.Trim();
-        if (string.IsNullOrEmpty(trimmedDisplayName))
+        var email = model.Email.Trim().ToLowerInvariant();
+        var displayName = model.DisplayName.Trim();
+        if (string.IsNullOrEmpty(displayName))
         {
             return ApiResponse<User>.Fail("Tên hiển thị không được để trống.");
         }
 
-        var emailExists = await _db.Users.AsNoTracking()
-            .AnyAsync(u => !u.IsDeleted && u.Email.ToLower() == normalizedEmail);
-        if (emailExists)
+        string? phone = null;
+        if (!string.IsNullOrWhiteSpace(model.PhoneNumber))
         {
-            return ApiResponse<User>.Fail("Email này đã được sử dụng bởi một tài khoản khác.");
-        }
-
-        if (normalizedPhone != null)
-        {
-            var phoneExists = await _db.Users.AsNoTracking()
-                .AnyAsync(u => !u.IsDeleted && u.PhoneNumber == normalizedPhone);
-            if (phoneExists)
+            phone = NormalizePhone(model.PhoneNumber);
+            if (phone == null)
             {
-                return ApiResponse<User>.Fail("Số điện thoại này đã được đăng ký cho tài khoản khác.");
+                return ApiResponse<User>.Fail("Số điện thoại không hợp lệ (chỉ gồm 9-11 chữ số).");
             }
         }
 
+        if (await _db.Users.AnyAsync(u => !u.IsDeleted && u.Email.ToLower() == email))
+        {
+            return ApiResponse<User>.Fail("Email này đã được sử dụng bởi tài khoản khác.");
+        }
+
+        if (phone != null && await _db.Users.AnyAsync(u => !u.IsDeleted && u.PhoneNumber == phone))
+        {
+            return ApiResponse<User>.Fail("Số điện thoại này đã được sử dụng bởi tài khoản khác.");
+        }
+
         var now = DateTimeOffset.UtcNow;
-        var newUser = new User
+        var user = new User
         {
             Id = Guid.NewGuid(),
-            Email = normalizedEmail,
-            PhoneNumber = normalizedPhone,
-            DisplayName = trimmedDisplayName,
+            Email = email,
+            PhoneNumber = phone,
+            DisplayName = displayName,
             SecurityStamp = Guid.NewGuid(),
             Role = "User",
-            IsLocked = false,
-            IsDeleted = false,
             LastActiveAt = now,
             CreatedAt = now,
             UpdatedAt = now
         };
+        user.PasswordHash = _passwordHasher.HashPassword(user, model.Password);
 
-        newUser.PasswordHash = _passwordHasher.HashPassword(newUser, model.Password);
+        _db.Users.Add(user);
+        await _db.SaveChangesAsync();
 
-        try
+        if (model.DateOfBirth.HasValue)
         {
-            _db.Users.Add(newUser);
-            await _db.SaveChangesAsync();
-            return ApiResponse<User>.Ok(newUser, "Đăng ký tài khoản thành công!");
+            await SaveBirthDateAsync(user.Id, model.DateOfBirth.Value);
         }
-        catch (DbUpdateException ex)
-        {
-            _logger.LogError(ex, "Lỗi DB khi đăng ký {Email}", normalizedEmail);
-            return ApiResponse<User>.Fail("Email hoặc Số điện thoại đã tồn tại trong hệ thống.");
-        }
+
+        return ApiResponse<User>.Ok(user, "Đăng ký tài khoản thành công! Chào mừng bạn đến với ZaloClone.");
     }
 
-    // 2. XÁC THỰC ĐĂNG NHẬP
     public async Task<ApiResponse<User>> ValidateLoginAsync(LoginViewModel model)
     {
-        var rawInput = model.EmailOrPhone.Trim();
+        await _db.Database.MigrateAsync();
+
+        var input = model.EmailOrPhone.Trim();
         User? user;
 
-        if (rawInput.Contains('@'))
+        if (input.Contains('@'))
         {
-            var normalizedEmail = rawInput.ToLowerInvariant();
-            user = await _db.Users.FirstOrDefaultAsync(u => !u.IsDeleted && u.Email.ToLower() == normalizedEmail);
+            var email = input.ToLowerInvariant();
+            user = await _db.Users.FirstOrDefaultAsync(u => !u.IsDeleted && u.Email.ToLower() == email);
         }
         else
         {
-            var normalizedPhone = NormalizePhone(rawInput) ?? rawInput;
+            var phone = NormalizePhone(input) ?? input;
             user = await _db.Users.FirstOrDefaultAsync(u => !u.IsDeleted && u.PhoneNumber != null &&
-                (u.PhoneNumber == normalizedPhone || u.PhoneNumber == rawInput));
+                (u.PhoneNumber == phone || u.PhoneNumber == input));
         }
 
         if (user == null)
@@ -164,27 +145,27 @@ public class AccountService : IAccountService
             return ApiResponse<User>.Fail("Tài khoản của bạn đã bị khóa bởi Quản trị viên.");
         }
 
-        var verifyResult = _passwordHasher.VerifyHashedPassword(user, user.PasswordHash, model.Password);
-        if (verifyResult == PasswordVerificationResult.Failed)
+        var check = _passwordHasher.VerifyHashedPassword(user, user.PasswordHash, model.Password);
+        if (check == PasswordVerificationResult.Failed)
         {
             return ApiResponse<User>.Fail("Tài khoản hoặc mật khẩu không chính xác.");
         }
 
-        if (verifyResult == PasswordVerificationResult.SuccessRehashNeeded)
-        {
-            user.PasswordHash = _passwordHasher.HashPassword(user, model.Password);
-        }
 
         user.LastActiveAt = DateTimeOffset.UtcNow;
         user.UpdatedAt = DateTimeOffset.UtcNow;
         await _db.SaveChangesAsync();
 
-        return ApiResponse<User>.Ok(user, "Đăng nhập thành công.");
+        return ApiResponse<User>.Ok(user, $"Đăng nhập thành công! Xin chào {user.DisplayName}.");
     }
 
     public async Task UpdateLastActiveAsync(Guid userId)
     {
-        if (userId == Guid.Empty) return;
+        if (userId == Guid.Empty)
+        {
+            return;
+        }
+
         var user = await _db.Users.FirstOrDefaultAsync(u => u.Id == userId && !u.IsDeleted);
         if (user != null)
         {
@@ -193,52 +174,50 @@ public class AccountService : IAccountService
         }
     }
 
-    // 3. QUÊN MẬT KHẨU & ĐẶT LẠI MẬT KHẨU
     public async Task<ApiResponse<string>> GenerateForgotPasswordOtpAsync(string emailOrPhone)
     {
-        var rawInput = emailOrPhone.Trim();
+        await _db.Database.MigrateAsync();
+
+        var input = emailOrPhone.Trim();
         User? user;
 
-        if (rawInput.Contains('@'))
+        if (input.Contains('@'))
         {
-            var normalizedEmail = rawInput.ToLowerInvariant();
-            user = await _db.Users.AsNoTracking()
-                .FirstOrDefaultAsync(u => !u.IsDeleted && u.Email.ToLower() == normalizedEmail);
+            var email = input.ToLowerInvariant();
+            user = await _db.Users.AsNoTracking().FirstOrDefaultAsync(u => !u.IsDeleted && u.Email.ToLower() == email);
         }
         else
         {
-            var normalizedPhone = NormalizePhone(rawInput) ?? rawInput;
-            user = await _db.Users.AsNoTracking()
-                .FirstOrDefaultAsync(u => !u.IsDeleted && u.PhoneNumber != null &&
-                    (u.PhoneNumber == normalizedPhone || u.PhoneNumber == rawInput));
+            var phone = NormalizePhone(input) ?? input;
+            user = await _db.Users.AsNoTracking().FirstOrDefaultAsync(u => !u.IsDeleted && u.PhoneNumber != null &&
+                (u.PhoneNumber == phone || u.PhoneNumber == input));
         }
 
         if (user == null)
         {
-            return ApiResponse<string>.Fail("Không tìm thấy tài khoản hoạt động nào khớp với thông tin vừa nhập.");
+            return ApiResponse<string>.Fail("Không tìm thấy tài khoản nào khớp với Email hoặc Số điện thoại vừa nhập.");
         }
 
-        var otpCode = Random.Shared.Next(100000, 999999).ToString();
-        _otpStore[user.Email.ToLowerInvariant()] = (otpCode, DateTimeOffset.UtcNow.AddMinutes(10));
-        _logger.LogInformation("[ZaloClone OTP] Mã đặt lại mật khẩu cho {Email} là: {OtpCode}", user.Email, otpCode);
+        var otp = Random.Shared.Next(100000, 999999).ToString();
+        _otpStore[user.Email.ToLowerInvariant()] = (otp, DateTimeOffset.UtcNow.AddMinutes(10));
 
-        return ApiResponse<string>.Ok(user.Email, $"[Chế độ Test Đồ Án] Mã OTP của tài khoản {user.Email} là: {otpCode} (Hiệu lực 10 phút).");
+        return ApiResponse<string>.Ok(user.Email, $"Mã xác thực OTP của tài khoản {user.Email} là: {otp} (Hiệu lực 10 phút).");
     }
 
     public async Task<ApiResponse> ResetPasswordWithOtpAsync(ResetPasswordViewModel model)
     {
-        var normalizedEmail = model.Email.Trim().ToLowerInvariant();
-        if (!_otpStore.TryGetValue(normalizedEmail, out var otpEntry) ||
-            otpEntry.ExpiresAt < DateTimeOffset.UtcNow ||
-            otpEntry.Otp != model.OtpCode.Trim())
+        var email = model.Email.Trim().ToLowerInvariant();
+        if (!_otpStore.TryGetValue(email, out var entry) ||
+            entry.ExpiresAt < DateTimeOffset.UtcNow ||
+            entry.Otp != model.OtpCode.Trim())
         {
-            return ApiResponse.Fail("Mã OTP không chính xác hoặc đã hết hạn.");
+            return ApiResponse.Fail("Mã xác thực OTP không chính xác hoặc đã hết hạn.");
         }
 
-        var user = await _db.Users.FirstOrDefaultAsync(u => !u.IsDeleted && u.Email.ToLower() == normalizedEmail);
+        var user = await _db.Users.FirstOrDefaultAsync(u => !u.IsDeleted && u.Email.ToLower() == email);
         if (user == null)
         {
-            return ApiResponse.Fail("Tài khoản không tồn tại.");
+            return ApiResponse.Fail("Không tìm thấy tài khoản.");
         }
 
         user.PasswordHash = _passwordHasher.HashPassword(user, model.NewPassword);
@@ -246,34 +225,37 @@ public class AccountService : IAccountService
         user.UpdatedAt = DateTimeOffset.UtcNow;
         await _db.SaveChangesAsync();
 
-        _otpStore.TryRemove(normalizedEmail, out _);
-        return ApiResponse.Ok("Đặt lại mật khẩu thành công! Vui lòng đăng nhập bằng mật khẩu mới.");
+        _otpStore.TryRemove(email, out _);
+        return ApiResponse.Ok("Đặt lại mật khẩu mới thành công! Các thiết bị khác đã được tự động đăng xuất.");
     }
 
-    // 4. TRANG CÁ NHÂN (XEM, SỬA, AVATAR, ĐỔI MẬT KHẨU)
-    public async Task<ProfileViewModel?> GetProfileAsync(Guid userId)
+    public async Task<ProfileViewModel?> GetProfileAsync(Guid targetUserId, Guid currentUserId)
     {
-        if (userId == Guid.Empty) return null;
+        if (targetUserId == Guid.Empty)
+        {
+            return null;
+        }
 
         var user = await _db.Users.AsNoTracking()
-            .FirstOrDefaultAsync(u => u.Id == userId && !u.IsDeleted);
-        if (user == null) return null;
-
-        var exists = CheckPhysicalAvatarExists(user.AvatarUrl, out var sizeBytes);
+            .FirstOrDefaultAsync(u => u.Id == targetUserId && !u.IsDeleted);
+        if (user == null)
+        {
+            return null;
+        }
 
         return new ProfileViewModel
         {
             Id = user.Id,
+            IsOwnProfile = targetUserId == currentUserId,
             Email = user.Email,
             PhoneNumber = user.PhoneNumber,
             DisplayName = user.DisplayName,
+            DateOfBirth = await GetBirthDateAsync(user.Id),
             AvatarUrl = user.AvatarUrl,
-            AvatarFileExistsOnDisk = exists,
-            AvatarFileSizeBytes = sizeBytes,
+            CoverUrl = GetCoverUrl(user.Id),
             Bio = user.Bio,
             Role = user.Role,
-            CreatedAt = user.CreatedAt,
-            LastActiveAt = user.LastActiveAt
+            CreatedAt = user.CreatedAt
         };
     }
 
@@ -285,85 +267,144 @@ public class AccountService : IAccountService
             return ApiResponse<User>.Fail("Không tìm thấy tài khoản.");
         }
 
-        var trimmedName = (model.DisplayName ?? string.Empty).Trim();
-        if (string.IsNullOrEmpty(trimmedName))
+        var name = (model.DisplayName ?? string.Empty).Trim();
+        if (string.IsNullOrEmpty(name))
         {
             return ApiResponse<User>.Fail("Tên hiển thị không được để trống.");
         }
 
-        string? normalizedPhone = null;
+        string? phone = null;
         if (!string.IsNullOrWhiteSpace(model.PhoneNumber))
         {
-            normalizedPhone = NormalizePhone(model.PhoneNumber);
-            if (normalizedPhone == null)
+            phone = NormalizePhone(model.PhoneNumber);
+            if (phone == null)
             {
-                return ApiResponse<User>.Fail("Số điện thoại không hợp lệ (chỉ gồm 9-11 chữ số, ví dụ 0901234567).");
+                return ApiResponse<User>.Fail("Số điện thoại không hợp lệ (9-11 chữ số).");
             }
 
-            if (normalizedPhone != user.PhoneNumber)
+            if (phone != user.PhoneNumber &&
+                await _db.Users.AnyAsync(u => !u.IsDeleted && u.Id != user.Id && u.PhoneNumber == phone))
             {
-                var phoneExists = await _db.Users.AsNoTracking()
-                    .AnyAsync(u => !u.IsDeleted && u.Id != user.Id && u.PhoneNumber == normalizedPhone);
-                if (phoneExists)
-                {
-                    return ApiResponse<User>.Fail("Số điện thoại này đã được liên kết với một tài khoản khác.");
-                }
+                return ApiResponse<User>.Fail("Số điện thoại này đã được tài khoản khác sử dụng.");
             }
         }
 
-        user.DisplayName = trimmedName;
-        user.PhoneNumber = normalizedPhone;
+        user.DisplayName = name;
+        user.PhoneNumber = phone;
         user.Bio = string.IsNullOrWhiteSpace(model.Bio) ? null : model.Bio.Trim();
         user.UpdatedAt = DateTimeOffset.UtcNow;
-
         await _db.SaveChangesAsync();
-        return ApiResponse<User>.Ok(user, "Cập nhật thông tin cá nhân thành công!");
+
+        if (model.DateOfBirth.HasValue)
+        {
+            await SaveBirthDateAsync(user.Id, model.DateOfBirth.Value);
+        }
+
+        return ApiResponse<User>.Ok(user, "Đã lưu cập nhật thông tin cá nhân!");
     }
 
-    public async Task<ApiResponse<(User User, string RelativeUrl, long FileSizeBytes)>> UpdateAvatarAsync(Guid userId, IFormFile? avatarFile)
+    public async Task<ApiResponse<User>> UpdateAvatarAsync(Guid userId, IFormFile? avatarFile)
     {
         if (avatarFile == null || avatarFile.Length == 0)
         {
-            return ApiResponse<(User, string, long)>.Fail("Vui lòng chọn một tệp ảnh hợp lệ.");
+            return ApiResponse<User>.Fail("Vui lòng chọn ảnh đại diện.");
         }
 
         if (!_fileStorageService.IsAllowedExtension(avatarFile.FileName, "avatars"))
         {
-            return ApiResponse<(User, string, long)>.Fail("Chỉ hỗ trợ định dạng ảnh .jpg, .jpeg, .png hoặc .webp.");
+            return ApiResponse<User>.Fail("Chỉ hỗ trợ định dạng ảnh .jpg, .jpeg, .png, .webp.");
         }
 
         if (avatarFile.Length > _fileStorageService.GetMaxSizeBytes("avatars"))
         {
-            return ApiResponse<(User, string, long)>.Fail("Dung lượng ảnh đại diện không được vượt quá 5 MB.");
+            return ApiResponse<User>.Fail("Dung lượng ảnh đại diện tối đa 5 MB.");
         }
 
         var user = await _db.Users.FirstOrDefaultAsync(u => u.Id == userId && !u.IsDeleted);
         if (user == null)
         {
-            return ApiResponse<(User, string, long)>.Fail("Không tìm thấy người dùng.");
+            return ApiResponse<User>.Fail("Không tìm thấy tài khoản.");
         }
 
-        var oldAvatarUrl = user.AvatarUrl;
-        var storageKey = await _fileStorageService.SaveFileAsync(avatarFile, "avatars");
-        var newRelativeUrl = _fileStorageService.GetRelativeUrl(storageKey);
-
-        if (!CheckPhysicalAvatarExists(newRelativeUrl, out var savedBytes) || savedBytes <= 0)
+        if (!string.IsNullOrWhiteSpace(user.AvatarUrl) && user.AvatarUrl.StartsWith("/uploads/avatars/"))
         {
-            return ApiResponse<(User, string, long)>.Fail("Lỗi lưu trữ: Không tìm thấy file ảnh sau khi ghi xuống ổ đĩa.");
+            await _fileStorageService.DeleteFileAsync(user.AvatarUrl.TrimStart('/'));
         }
 
-        if (!string.IsNullOrWhiteSpace(oldAvatarUrl) && oldAvatarUrl.StartsWith("/uploads/avatars/"))
-        {
-            await _fileStorageService.DeleteFileAsync(oldAvatarUrl.TrimStart('/'));
-        }
-
-        user.AvatarUrl = newRelativeUrl;
+        var key = await _fileStorageService.SaveFileAsync(avatarFile, "avatars");
+        user.AvatarUrl = _fileStorageService.GetRelativeUrl(key);
         user.UpdatedAt = DateTimeOffset.UtcNow;
         await _db.SaveChangesAsync();
 
-        return ApiResponse<(User, string, long)>.Ok(
-            (user, newRelativeUrl, savedBytes),
-            $"Cập nhật ảnh đại diện thành công! Đã lưu tại {newRelativeUrl} ({savedBytes / 1024.0:F1} KB).");
+        return ApiResponse<User>.Ok(user, "Cập nhật ảnh đại diện thành công!");
+    }
+
+    public async Task<ApiResponse<User>> DeleteAvatarAsync(Guid userId)
+    {
+        var user = await _db.Users.FirstOrDefaultAsync(u => u.Id == userId && !u.IsDeleted);
+        if (user == null)
+        {
+            return ApiResponse<User>.Fail("Không tìm thấy tài khoản.");
+        }
+
+        if (!string.IsNullOrWhiteSpace(user.AvatarUrl) && user.AvatarUrl.StartsWith("/uploads/avatars/"))
+        {
+            await _fileStorageService.DeleteFileAsync(user.AvatarUrl.TrimStart('/'));
+        }
+
+        user.AvatarUrl = null;
+        user.UpdatedAt = DateTimeOffset.UtcNow;
+        await _db.SaveChangesAsync();
+
+        return ApiResponse<User>.Ok(user, "Đã xóa ảnh đại diện về mặc định!");
+    }
+
+    public async Task<ApiResponse<string>> UpdateCoverAsync(Guid userId, IFormFile? coverFile)
+    {
+        if (coverFile == null || coverFile.Length == 0)
+        {
+            return ApiResponse<string>.Fail("Vui lòng chọn ảnh bìa.");
+        }
+
+        var ext = Path.GetExtension(coverFile.FileName).ToLowerInvariant();
+        if (!_allowedExtensions.Contains(ext))
+        {
+            return ApiResponse<string>.Fail("Ảnh bìa chỉ hỗ trợ định dạng .jpg, .jpeg, .png, .webp.");
+        }
+
+        if (coverFile.Length > 5 * 1024 * 1024)
+        {
+            return ApiResponse<string>.Fail("Dung lượng ảnh bìa tối đa 5 MB.");
+        }
+
+        await DeleteCoverAsync(userId);
+
+        var coverDir = GetCoverDirectory();
+        var fileName = $"cover_{userId:N}{ext}";
+        var fullPath = Path.Combine(coverDir, fileName);
+
+        await using (var stream = new FileStream(fullPath, FileMode.Create))
+        {
+            await coverFile.CopyToAsync(stream);
+        }
+
+        var url = $"/uploads/covers/{fileName}?v={DateTimeOffset.UtcNow.ToUnixTimeSeconds()}";
+        return ApiResponse<string>.Ok(url, "Cập nhật ảnh bìa thành công!");
+    }
+
+    public Task<ApiResponse> DeleteCoverAsync(Guid userId)
+    {
+        var coverDir = GetCoverDirectory();
+        foreach (var ext in _allowedExtensions)
+        {
+            var path = Path.Combine(coverDir, $"cover_{userId:N}{ext}");
+            if (File.Exists(path))
+            {
+                File.Delete(path);
+            }
+        }
+
+        return Task.FromResult(ApiResponse.Ok("Đã xóa ảnh bìa!"));
     }
 
     public async Task<ApiResponse<User>> ChangePasswordAsync(Guid userId, ChangePasswordViewModel model)
@@ -374,8 +415,8 @@ public class AccountService : IAccountService
             return ApiResponse<User>.Fail("Không tìm thấy tài khoản.");
         }
 
-        var verifyResult = _passwordHasher.VerifyHashedPassword(user, user.PasswordHash, model.CurrentPassword);
-        if (verifyResult == PasswordVerificationResult.Failed)
+        var check = _passwordHasher.VerifyHashedPassword(user, user.PasswordHash, model.CurrentPassword);
+        if (check == PasswordVerificationResult.Failed)
         {
             return ApiResponse<User>.Fail("Mật khẩu hiện tại không chính xác.");
         }
@@ -385,49 +426,24 @@ public class AccountService : IAccountService
         user.UpdatedAt = DateTimeOffset.UtcNow;
         await _db.SaveChangesAsync();
 
-        return ApiResponse<User>.Ok(user, "Đổi mật khẩu thành công!");
-    }
-
-    public bool CheckPhysicalAvatarExists(string? avatarUrl, out long fileSizeBytes)
-    {
-        fileSizeBytes = 0;
-        if (string.IsNullOrWhiteSpace(avatarUrl) || !avatarUrl.StartsWith("/uploads/"))
-        {
-            return false;
-        }
-
-        var webRoot = _env.WebRootPath ?? Path.Combine(Directory.GetCurrentDirectory(), "wwwroot");
-        var relativePath = avatarUrl.TrimStart('/').Replace('/', Path.DirectorySeparatorChar);
-        var physicalPath = Path.Combine(webRoot, relativePath);
-
-        var info = new FileInfo(physicalPath);
-        if (info.Exists)
-        {
-            fileSizeBytes = info.Length;
-            return true;
-        }
-        return false;
+        return ApiResponse<User>.Ok(user, "Đổi mật khẩu thành công! Các trình duyệt khác đang đăng nhập cùng tài khoản đã tự động bị đăng xuất.");
     }
 
     public async Task SignInUserAsync(HttpContext httpContext, User user, bool isPersistent)
     {
+        var role = string.Equals(user.Role, "Admin", StringComparison.OrdinalIgnoreCase) ? "Admin" : "User";
         var claims = new List<Claim>
         {
             new(ClaimTypes.NameIdentifier, user.Id.ToString()),
             new(ClaimTypes.Name, user.DisplayName),
             new(ClaimTypes.Email, user.Email),
-            new(ClaimTypes.Role, user.Role ?? "User"),
+            new(ClaimTypes.Role, role),
             new("SecurityStamp", user.SecurityStamp.ToString()),
             new("AvatarUrl", user.AvatarUrl ?? string.Empty)
         };
 
-        if (!string.IsNullOrEmpty(user.PhoneNumber))
-        {
-            claims.Add(new Claim(ClaimTypes.MobilePhone, user.PhoneNumber));
-        }
-
-        var claimsIdentity = new ClaimsIdentity(claims, CookieAuthenticationDefaults.AuthenticationScheme);
-        var authProperties = new AuthenticationProperties
+        var identity = new ClaimsIdentity(claims, CookieAuthenticationDefaults.AuthenticationScheme);
+        var props = new AuthenticationProperties
         {
             IsPersistent = isPersistent,
             ExpiresUtc = DateTimeOffset.UtcNow.AddDays(7),
@@ -436,42 +452,114 @@ public class AccountService : IAccountService
 
         await httpContext.SignInAsync(
             CookieAuthenticationDefaults.AuthenticationScheme,
-            new ClaimsPrincipal(claimsIdentity),
-            authProperties);
+            new ClaimsPrincipal(identity),
+            props);
+    }
+
+    private string GetCoverDirectory()
+    {
+        var webRoot = _env.WebRootPath ?? Path.Combine(Directory.GetCurrentDirectory(), "wwwroot");
+        var dir = Path.Combine(webRoot, "uploads", "covers");
+        if (!Directory.Exists(dir))
+        {
+            Directory.CreateDirectory(dir);
+        }
+
+        return dir;
+    }
+
+    private string? GetCoverUrl(Guid userId)
+    {
+        var dir = GetCoverDirectory();
+        foreach (var ext in _allowedExtensions)
+        {
+            var fileName = $"cover_{userId:N}{ext}";
+            var path = Path.Combine(dir, fileName);
+            if (File.Exists(path))
+            {
+                return $"/uploads/covers/{fileName}?v={File.GetLastWriteTimeUtc(path).Ticks}";
+            }
+        }
+
+        return null;
+    }
+
+    private async Task SaveBirthDateAsync(Guid userId, DateTime birthDate)
+    {
+        var webRoot = _env.WebRootPath ?? Path.Combine(Directory.GetCurrentDirectory(), "wwwroot");
+        var dir = Path.Combine(webRoot, "uploads", "profiles");
+        if (!Directory.Exists(dir))
+        {
+            Directory.CreateDirectory(dir);
+        }
+
+        var path = Path.Combine(dir, $"dob_{userId:N}.json");
+        await File.WriteAllTextAsync(path, JsonSerializer.Serialize(new { DateOfBirth = birthDate.ToString("yyyy-MM-dd") }));
+    }
+
+    private async Task<DateTime?> GetBirthDateAsync(Guid userId)
+    {
+        var webRoot = _env.WebRootPath ?? Path.Combine(Directory.GetCurrentDirectory(), "wwwroot");
+        var path = Path.Combine(webRoot, "uploads", "profiles", $"dob_{userId:N}.json");
+        if (!File.Exists(path))
+        {
+            return null;
+        }
+
+        try
+        {
+            using var doc = JsonDocument.Parse(await File.ReadAllTextAsync(path));
+            if (doc.RootElement.TryGetProperty("DateOfBirth", out var p) && DateTime.TryParse(p.GetString(), out var d))
+            {
+                return d;
+            }
+        }
+        catch
+        {
+            return null;
+        }
+
+        return null;
     }
 
     private static string? NormalizePhone(string input)
     {
         var digits = new string(input.Where(c => char.IsDigit(c) || c == '+').ToArray());
-        if (digits.StartsWith("+84")) digits = "0" + digits[3..];
-        else if (digits.StartsWith("84") && digits.Length >= 11) digits = "0" + digits[2..];
+        if (digits.StartsWith("+84"))
+        {
+            digits = "0" + digits[3..];
+        }
+        else if (digits.StartsWith("84") && digits.Length >= 11)
+        {
+            digits = "0" + digits[2..];
+        }
 
-        if (digits.Any(c => !char.IsDigit(c))) return null;
+        if (digits.Any(c => !char.IsDigit(c)))
+        {
+            return null;
+        }
+
         return digits.Length is >= 9 and <= 11 ? digits : null;
     }
 }
 
-// =========================================================================
-// VIEW MODELS CỦA CẶP 1 (Đặt trong Services/Account/AccountService.cs để dùng chung
-// cho cả AccountController và ProfileController mà không đụng thư mục Models/)
-// =========================================================================
-
 public class RegisterViewModel
 {
     [Required(ErrorMessage = "Vui lòng nhập Email.")]
-    [EmailAddress(ErrorMessage = "Định dạng Email không hợp lệ.")]
-    [StringLength(254, ErrorMessage = "Email tối đa 254 ký tự.")]
+    [EmailAddress(ErrorMessage = "Email không hợp lệ.")]
     public string Email { get; set; } = string.Empty;
 
-    [StringLength(20, ErrorMessage = "Số điện thoại tối đa 20 ký tự.")]
     public string? PhoneNumber { get; set; }
 
     [Required(ErrorMessage = "Vui lòng nhập tên hiển thị.")]
-    [StringLength(100, MinimumLength = 2, ErrorMessage = "Tên hiển thị từ 2 đến 100 ký tự.")]
     public string DisplayName { get; set; } = string.Empty;
 
+    [Required(ErrorMessage = "Vui lòng chọn ngày sinh.")]
+    [DataType(DataType.Date)]
+    public DateTime? DateOfBirth { get; set; }
+
     [Required(ErrorMessage = "Vui lòng nhập mật khẩu.")]
-    [StringLength(100, MinimumLength = 6, ErrorMessage = "Mật khẩu phải có ít nhất 6 ký tự.")]
+    [MinLength(6, ErrorMessage = "Mật khẩu tối thiểu 6 ký tự.")]
     [DataType(DataType.Password)]
     public string Password { get; set; } = string.Empty;
 
@@ -491,7 +579,6 @@ public class LoginViewModel
     public string Password { get; set; } = string.Empty;
 
     public bool RememberMe { get; set; } = true;
-
     public string? ReturnUrl { get; set; }
 }
 
@@ -507,16 +594,16 @@ public class ResetPasswordViewModel
     [EmailAddress(ErrorMessage = "Email không hợp lệ.")]
     public string Email { get; set; } = string.Empty;
 
-    [Required(ErrorMessage = "Vui lòng nhập mã xác nhận (OTP).")]
+    [Required(ErrorMessage = "Vui lòng nhập mã xác nhận OTP (6 chữ số).")]
     [StringLength(6, MinimumLength = 6, ErrorMessage = "Mã OTP gồm đúng 6 chữ số.")]
     public string OtpCode { get; set; } = string.Empty;
 
     [Required(ErrorMessage = "Vui lòng nhập mật khẩu mới.")]
-    [StringLength(100, MinimumLength = 6, ErrorMessage = "Mật khẩu mới phải từ 6 ký tự trở lên.")]
+    [MinLength(6, ErrorMessage = "Mật khẩu mới tối thiểu 6 ký tự.")]
     [DataType(DataType.Password)]
     public string NewPassword { get; set; } = string.Empty;
 
-    [Required(ErrorMessage = "Vui lòng nhập lại mật khẩu mới.")]
+    [Required(ErrorMessage = "Vui lòng xác nhận mật khẩu mới.")]
     [DataType(DataType.Password)]
     [Compare(nameof(NewPassword), ErrorMessage = "Mật khẩu xác nhận không khớp.")]
     public string ConfirmNewPassword { get; set; } = string.Empty;
@@ -529,7 +616,7 @@ public class ChangePasswordViewModel
     public string CurrentPassword { get; set; } = string.Empty;
 
     [Required(ErrorMessage = "Vui lòng nhập mật khẩu mới.")]
-    [StringLength(100, MinimumLength = 6, ErrorMessage = "Mật khẩu mới phải có ít nhất 6 ký tự.")]
+    [MinLength(6, ErrorMessage = "Mật khẩu mới tối thiểu 6 ký tự.")]
     [DataType(DataType.Password)]
     public string NewPassword { get; set; } = string.Empty;
 
@@ -542,23 +629,17 @@ public class ChangePasswordViewModel
 public class ProfileViewModel
 {
     public Guid Id { get; set; }
+    public bool IsOwnProfile { get; set; } = true;
     public string Email { get; set; } = string.Empty;
-
-    [StringLength(20, ErrorMessage = "Số điện thoại tối đa 20 ký tự.")]
     public string? PhoneNumber { get; set; }
-
-    [Required(ErrorMessage = "Tên hiển thị không được để trống.")]
-    [StringLength(100, MinimumLength = 2, ErrorMessage = "Tên hiển thị từ 2 đến 100 ký tự.")]
     public string DisplayName { get; set; } = string.Empty;
 
+    [DataType(DataType.Date)]
+    public DateTime? DateOfBirth { get; set; }
+
     public string? AvatarUrl { get; set; }
-    public bool AvatarFileExistsOnDisk { get; set; }
-    public long AvatarFileSizeBytes { get; set; }
-
-    [StringLength(255, ErrorMessage = "Tiểu sử tối đa 255 ký tự.")]
+    public string? CoverUrl { get; set; }
     public string? Bio { get; set; }
-
     public string Role { get; set; } = "User";
     public DateTimeOffset CreatedAt { get; set; }
-    public DateTimeOffset? LastActiveAt { get; set; }
 }
