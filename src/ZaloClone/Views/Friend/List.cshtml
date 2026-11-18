@@ -1,0 +1,62 @@
+@model List<ZaloClone.Models.ViewModels.Friend.FriendListItemViewModel>
+@{
+    ViewData["Title"] = "Bạn bè";
+}
+
+<div class="container py-4">
+    <div class="d-flex flex-wrap justify-content-between align-items-center gap-2 mb-4">
+        <div>
+            <h1 class="h3 mb-1">Bạn bè</h1>
+            <p class="text-muted mb-0">Danh sách những người bạn đã kết nối.</p>
+        </div>
+        <a class="btn btn-outline-primary" asp-controller="Friend" asp-action="Search">Tìm thêm bạn</a>
+    </div>
+
+    @Html.AntiForgeryToken()
+    <div id="friendActionMessage" class="alert d-none" role="status"></div>
+
+    @if (Model.Count == 0)
+    {
+        <div class="card card-body text-center py-5">
+            <h2 class="h5">Bạn chưa có bạn bè nào</h2>
+            <p class="text-muted mb-3">Tìm người quen để bắt đầu kết nối.</p>
+            <a class="btn btn-primary mx-auto" asp-controller="Friend" asp-action="Search">Tìm bạn</a>
+        </div>
+    }
+    else
+    {
+        <div class="list-group">
+            @foreach (var f in Model)
+            {
+                <div class="list-group-item d-flex flex-wrap align-items-center gap-3" data-friend-row="@f.UserId">
+                    @if (!string.IsNullOrWhiteSpace(f.AvatarUrl))
+                    {
+                        <img src="@f.AvatarUrl" alt="" class="rounded-circle" width="48" height="48" style="object-fit: cover" />
+                    }
+                    else
+                    {
+                        <div class="rounded-circle bg-primary text-white d-flex align-items-center justify-content-center fw-semibold" style="width:48px;height:48px">
+                            @(string.IsNullOrWhiteSpace(f.DisplayName) ? "?" : f.DisplayName[..1].ToUpperInvariant())
+                        </div>
+                    }
+                    <div class="flex-grow-1">
+                        <div class="fw-semibold">@f.DisplayName</div>
+                    </div>
+                    <div class="d-flex gap-2">
+                        <button type="button" class="btn btn-primary btn-sm" data-start-chat="@f.UserId" data-start-chat-url="/Friend/StartChat">
+                            Nhắn tin
+                        </button>
+                        <button type="button" class="btn btn-outline-danger btn-sm" data-friend-block="@f.UserId" data-url="@Url.Action("Block", "Friend")">
+                            Chặn
+                        </button>
+                    </div>
+                </div>
+            }
+        </div>
+    }
+</div>
+
+@section Scripts {
+    <script src="~/js/friend/friend-chat.js" asp-append-version="true"></script>
+    <script src="~/js/friend/friend-actions.js" asp-append-version="true"></script>
+}
