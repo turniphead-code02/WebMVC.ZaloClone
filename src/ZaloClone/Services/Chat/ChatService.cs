@@ -23,6 +23,9 @@ public class ChatService : IChatService
     private readonly IHubContext<ChatHub> _hubContext;
     private readonly ILogger<ChatService> _logger;
 
+    private static readonly string[] AllowedImageExts = { ".jpg", ".jpeg", ".png", ".webp", ".gif" };
+    private static readonly string[] AllowedFileExts = { ".pdf", ".docx", ".xlsx", ".pptx", ".zip", ".txt" };
+
     public ChatService(
         AppDbContext context,
         IFileStorageService storageService,
@@ -59,7 +62,7 @@ public class ChatService : IChatService
                 SenderName = m.Sender != null ? m.Sender.DisplayName : "Hệ thống",
                 SenderAvatar = m.Sender != null ? m.Sender.AvatarUrl : null,
                 Content = m.IsRecalled ? "Tin nhắn đã được thu hồi" : (m.Content ?? ""),
-                MessageType = m.MessageType,
+                MessageType = m.IsRecalled ? "Recalled" : m.MessageType,
                 CreatedAt = m.CreatedAt,
                 FormattedTime = m.CreatedAt.ToString("HH:mm"),
                 IsSelf = m.SenderId == userId
@@ -121,7 +124,6 @@ public class ChatService : IChatService
             IsSelf = true
         };
 
-        // Broadcast qua SignalR
         await _hubContext.Clients.Group(ChatHub.GetConversationGroupName(conversationId))
             .SendAsync("ReceiveMessage", new
             {
@@ -154,7 +156,22 @@ public class ChatService : IChatService
         }
 
         var ext = Path.GetExtension(file.FileName).ToLowerInvariant();
-        bool isImage = ext is ".jpg" or ".jpeg" or ".png" or ".gif" or ".webp";
+        bool isImage = AllowedImageExts.Contains(ext);
+        bool isDoc = AllowedFileExts.Contains(ext);
+
+        if (!isImage && !isDoc)
+        {
+            return ApiResponse<MessageDto>.Fail("Định dạng không hỗ trợ. Chỉ chấp nhận ảnh (.jpg, .png, .webp) hoặc file (.pdf, .docx, .xlsx, .pptx, .zip, .txt).");
+        }
+
+        long maxBytes = isImage ? 10L * 1024 * 1024 : 50L * 1024 * 1024;
+        if (file.Length > maxBytes)
+        {
+            return ApiResponse<MessageDto>.Fail(isImage
+                ? "Dung lượng ảnh vượt quá giới hạn 10 MB."
+                : "Dung lượng file đính kèm vượt quá giới hạn 50 MB.");
+        }
+
         string category = isImage ? "chat-images" : "chat-files";
 
         string storageKey;
@@ -219,7 +236,6 @@ public class ChatService : IChatService
             IsSelf = true
         };
 
-        // Broadcast SignalR bao gồm fileUrl và thông tin attachment
         await _hubContext.Clients.Group(ChatHub.GetConversationGroupName(conversationId))
             .SendAsync("ReceiveMessage", new
             {
@@ -250,6 +266,11 @@ public class ChatService : IChatService
         if (message.SenderId != userId)
         {
             return ApiResponse.Fail("Bạn chỉ có thể thu hồi tin nhắn của chính mình.");
+        }
+
+        if (message.IsRecalled)
+        {
+            return ApiResponse.Fail("Tin nhắn này đã được thu hồi trước đó.");
         }
 
         message.IsRecalled = true;

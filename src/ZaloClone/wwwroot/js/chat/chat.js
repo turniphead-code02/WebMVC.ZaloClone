@@ -13,6 +13,59 @@ document.addEventListener("DOMContentLoaded", function () {
         chatStream.scrollTop = chatStream.scrollHeight;
     }
 
+    // 0. TÍCH HỢP BẢNG CHỌN EMOJI VÀO THANH NHẬP TIN NHẮN
+    initEmojiPicker();
+
+    function initEmojiPicker() {
+        const inputBar = document.querySelector(".chat-input-bar");
+        if (!inputBar || !inputMessage) return;
+
+        inputBar.style.position = "relative";
+
+        const btnEmoji = document.createElement("button");
+        btnEmoji.type = "button";
+        btnEmoji.className = "btn-attach";
+        btnEmoji.title = "Chèn biểu tượng cảm xúc";
+        btnEmoji.innerHTML = `<i class="bi bi-emoji-smile"></i>`;
+
+        const emojiPopup = document.createElement("div");
+        emojiPopup.className = "shadow rounded-3 bg-white border p-2 d-none";
+        emojiPopup.style.cssText = "position: absolute; bottom: 64px; left: 16px; z-index: 1050; width: 260px; display: grid; grid-template-columns: repeat(7, 1fr); gap: 4px;";
+
+        const emojis = [
+            "😀", "😂", "🤣", "😊", "🥰", "😍", "😘",
+            "😎", "🤔", "😢", "😭", "😡", "😱", "😴",
+            "👍", "👎", "👏", "🙏", "❤️", "💔", "🔥",
+            "🎉", "✨", "💯", "🌹", "☕", "🍻", "👋"
+        ];
+
+        emojis.forEach(em => {
+            const span = document.createElement("button");
+            span.type = "button";
+            span.className = "btn btn-sm btn-light p-1 fs-5 border-0";
+            span.textContent = em;
+            span.addEventListener("click", function () {
+                inputMessage.value += em;
+                inputMessage.focus();
+            });
+            emojiPopup.appendChild(span);
+        });
+
+        btnEmoji.addEventListener("click", function (e) {
+            e.stopPropagation();
+            emojiPopup.classList.toggle("d-none");
+        });
+
+        document.addEventListener("click", function (e) {
+            if (!emojiPopup.contains(e.target) && e.target !== btnEmoji) {
+                emojiPopup.classList.add("d-none");
+            }
+        });
+
+        inputBar.insertBefore(btnEmoji, inputMessage);
+        inputBar.appendChild(emojiPopup);
+    }
+
     // 1. KHỞI TẠO KẾT NỐI SIGNALR WEBSOCKET
     const connection = new signalR.HubConnectionBuilder()
         .withUrl("/chathub")
@@ -21,40 +74,32 @@ document.addEventListener("DOMContentLoaded", function () {
 
     // Nhận tin nhắn mới tức thời từ Server
     connection.on("ReceiveMessage", function (msg) {
-        console.log("Tin nhắn mới nhận:", msg);
-
-        // A. Cập nhật vào dòng tin nhắn nếu đang mở đúng cuộc trò chuyện này
         if (msg.conversationId === activeConvId && chatStream) {
+            const emptyHint = chatStream.querySelector(".text-center.text-muted");
+            if (emptyHint) emptyHint.remove();
+
             const isSelf = msg.senderId === currentUserId;
-            const initials = msg.senderName ? msg.senderName.split(' ').map(n => n[0]).slice(-2).join('') : 'U';
+            const row = buildMessageRow({
+                id: msg.id,
+                senderName: msg.senderName,
+                content: msg.content,
+                messageType: msg.messageType,
+                fileUrl: msg.fileUrl,
+                fileName: msg.fileName,
+                formattedTime: msg.createdAt || "Vừa xong",
+                isSelf: isSelf,
+                isRecalled: false
+            });
 
-            let bubbleContent = escapeHtml(msg.content);
-            if (msg.messageType === 'Image' && msg.fileUrl) {
-                bubbleContent = `<a href="${escapeHtml(msg.fileUrl)}" target="_blank"><img src="${escapeHtml(msg.fileUrl)}" alt="Ảnh" class="img-fluid rounded-3 mb-1" style="max-height: 200px;" /></a><br /><small>${escapeHtml(msg.fileName || '')}</small>`;
-            } else if (msg.messageType === 'File' && msg.fileUrl) {
-                bubbleContent = `<div class="d-flex align-items-center gap-2"><i class="bi bi-file-earmark-arrow-down fs-4"></i><div><a href="${escapeHtml(msg.fileUrl)}" download class="text-decoration-none fw-semibold ${isSelf ? 'text-white' : 'text-primary'}">${escapeHtml(msg.fileName || 'Tệp đính kèm')}</a></div></div>`;
-            }
-
-            const row = document.createElement("div");
-            row.className = `msg-row ${isSelf ? 'outgoing' : 'incoming'}`;
-            row.innerHTML = `
-                <div class="msg-avatar" title="${escapeHtml(msg.senderName)}">${initials}</div>
-                <div class="msg-bubble-wrap">
-                    ${!isSelf ? `<div class="msg-sender-name">${escapeHtml(msg.senderName)}</div>` : ''}
-                    <div class="msg-bubble">${bubbleContent}</div>
-                    <div class="msg-time">${msg.createdAt || 'Vừa xong'}</div>
-                </div>
-            `;
             chatStream.appendChild(row);
             chatStream.scrollTop = chatStream.scrollHeight;
 
-            // Nếu là file, tự động cập nhật danh sách Files ở Cột 4
             if (msg.fileUrl) {
                 refreshAttachments(activeConvId);
             }
         }
 
-        // B. Cập nhật preview tin nhắn ở Cột 2 (Danh sách hội thoại)
+        // Cập nhật preview tin nhắn ở Cột 2
         const convElement = document.querySelector(`.conv-item[data-id="${msg.conversationId}"]`);
         if (convElement) {
             const previewEl = convElement.querySelector(".conv-preview");
@@ -73,10 +118,154 @@ document.addEventListener("DOMContentLoaded", function () {
         }
     });
 
-    // Bắt đầu kết nối
+    // Nhận sự kiện Thu hồi tin nhắn real-time từ Server
+    connection.on("MessageRecalled", function (data) {
+        const row = document.querySelector(`.msg-row[data-message-id="${data.messageId}"]`);
+        if (row) {
+            const bubble = row.querySelector(".msg-bubble");
+            if (bubble) {
+                bubble.innerHTML = `<em class="opacity-75">Tin nhắn đã được thu hồi</em>`;
+            }
+            const recallBtn = row.querySelector(".btn-recall-msg");
+            if (recallBtn) recallBtn.remove();
+        }
+    });
+
     connection.start()
-        .then(() => console.log(" SignalR ChatHub đã kết nối thành công!"))
-        .catch(err => console.error(" Lỗi kết nối SignalR:", err));
+        .then(() => console.log("SignalR ChatHub đã kết nối thành công!"))
+        .catch(err => console.error("Lỗi kết nối SignalR:", err));
+
+    // Đồng bộ lại danh sách tin nhắn (ID, ảnh/file, nút thu hồi) khi vừa tải trang (F5)
+    if (activeConvId && chatStream) {
+        syncCurrentConversationMessages(activeConvId);
+    }
+
+    async function syncCurrentConversationMessages(convId) {
+        try {
+            const [msgRes, attRes] = await Promise.all([
+                fetch(`/Chat/Messages?conversationId=${convId}`),
+                fetch(`/Chat/Attachments?conversationId=${convId}`)
+            ]);
+            const msgData = await msgRes.json();
+            const attData = await attRes.json();
+
+            if (msgData.success && Array.isArray(msgData.data) && msgData.data.length > 0) {
+                const attachments = attData.success ? (attData.data || []) : [];
+                renderMessagesList(msgData.data, attachments);
+            }
+        } catch (err) {
+            console.error("Lỗi đồng bộ tin nhắn:", err);
+        }
+    }
+
+    function renderMessagesList(messages, attachments) {
+        if (!chatStream) return;
+        chatStream.innerHTML = "";
+
+        if (!messages || messages.length === 0) {
+            chatStream.innerHTML = `<div class="text-center text-muted py-5">Chưa có tin nhắn nào. Hãy gửi lời chào nhé! 👋</div>`;
+            return;
+        }
+
+        messages.forEach(msg => {
+            let fileUrl = null;
+            let fileName = null;
+
+            if (msg.messageType === "Image" || msg.messageType === "File") {
+                fileName = msg.content.replace(/^\[(Ảnh|Tệp)\]\s*/, "");
+                const matched = attachments.find(a => a.fileName === fileName);
+                if (matched) {
+                    fileUrl = `/uploads/${matched.storageKey}`;
+                }
+            }
+
+            const row = buildMessageRow({
+                id: msg.id,
+                senderName: msg.senderName,
+                content: msg.content,
+                messageType: msg.messageType,
+                fileUrl: fileUrl,
+                fileName: fileName,
+                formattedTime: msg.formattedTime,
+                isSelf: msg.isSelf,
+                isRecalled: msg.messageType === "Recalled" || msg.content === "Tin nhắn đã được thu hồi"
+            });
+
+            chatStream.appendChild(row);
+        });
+
+        chatStream.scrollTop = chatStream.scrollHeight;
+    }
+
+    function buildMessageRow(msg) {
+        const initials = msg.senderName ? msg.senderName.split(" ").map(n => n[0]).slice(-2).join("") : "U";
+        let bubbleContent = escapeHtml(msg.content);
+
+        if (msg.isRecalled) {
+            bubbleContent = `<em class="opacity-75">Tin nhắn đã được thu hồi</em>`;
+        } else if (msg.messageType === "Image" && msg.fileUrl) {
+            bubbleContent = `
+                <a href="${escapeHtml(msg.fileUrl)}" target="_blank">
+                    <img src="${escapeHtml(msg.fileUrl)}" alt="Ảnh" class="img-fluid rounded-3 mb-1" style="max-height: 200px;" />
+                </a>
+                <div class="small opacity-75">${escapeHtml(msg.fileName || "")}</div>`;
+        } else if (msg.messageType === "File" && msg.fileUrl) {
+            bubbleContent = `
+                <div class="d-flex align-items-center gap-2">
+                    <i class="bi bi-file-earmark-arrow-down fs-4"></i>
+                    <a href="${escapeHtml(msg.fileUrl)}" download class="text-decoration-none fw-semibold ${msg.isSelf ? "text-white" : "text-primary"}">
+                        ${escapeHtml(msg.fileName || "Tệp đính kèm")}
+                    </a>
+                </div>`;
+        }
+
+        const recallHtml = (msg.isSelf && !msg.isRecalled && msg.id)
+            ? `<button type="button" class="btn btn-link btn-sm text-muted p-0 ms-2 text-decoration-none btn-recall-msg" data-id="${msg.id}" title="Thu hồi tin nhắn" style="font-size: 11px;">Thu hồi</button>`
+            : "";
+
+        const row = document.createElement("div");
+        row.className = `msg-row ${msg.isSelf ? "outgoing" : "incoming"}`;
+        if (msg.id) row.dataset.messageId = msg.id;
+
+        row.innerHTML = `
+            <div class="msg-avatar" title="${escapeHtml(msg.senderName)}">${initials}</div>
+            <div class="msg-bubble-wrap">
+                ${!msg.isSelf ? `<div class="msg-sender-name">${escapeHtml(msg.senderName)}</div>` : ""}
+                <div class="msg-bubble">${bubbleContent}</div>
+                <div class="msg-time d-flex align-items-center ${msg.isSelf ? "justify-content-end" : ""}">
+                    <span>${msg.formattedTime || "Vừa xong"}</span>
+                    ${recallHtml}
+                </div>
+            </div>
+        `;
+
+        const btnRecall = row.querySelector(".btn-recall-msg");
+        if (btnRecall) {
+            btnRecall.addEventListener("click", () => recallMessage(msg.id));
+        }
+
+        return row;
+    }
+
+    async function recallMessage(messageId) {
+        if (!messageId) return;
+        if (!confirm("Bạn có chắc chắn muốn thu hồi tin nhắn này?")) return;
+
+        try {
+            const res = await fetch("/Chat/RecallMessage", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ messageId: messageId })
+            });
+            const data = await res.json();
+            if (!data.success) {
+                alert(data.message || "Không thể thu hồi tin nhắn.");
+            }
+        } catch (err) {
+            console.error("Lỗi thu hồi tin nhắn:", err);
+            alert("Lỗi kết nối khi thu hồi tin nhắn.");
+        }
+    }
 
     // 2. GỬI TIN NHẮN VĂN BẢN
     async function sendMessage() {
@@ -119,13 +308,34 @@ document.addEventListener("DOMContentLoaded", function () {
         });
     }
 
-    // 3. GỬI TỆP ĐÍNH KÈM / ẢNH
+    // 3. GỬI TỆP ĐÍNH KÈM / ẢNH (Kiểm tra giới hạn 10MB Ảnh / 50MB File)
     if (btnAttach && fileAttachmentInput) {
+        fileAttachmentInput.setAttribute("accept", ".jpg,.jpeg,.png,.webp,.gif,.pdf,.docx,.xlsx,.pptx,.zip,.txt");
         btnAttach.addEventListener("click", () => fileAttachmentInput.click());
 
         fileAttachmentInput.addEventListener("change", async function () {
             if (!this.files || this.files.length === 0 || !activeConvId) return;
             const file = this.files[0];
+
+            const ext = file.name.substring(file.name.lastIndexOf(".")).toLowerCase();
+            const imageExts = [".jpg", ".jpeg", ".png", ".webp", ".gif"];
+            const fileExts = [".pdf", ".docx", ".xlsx", ".pptx", ".zip", ".txt"];
+            const isImage = imageExts.includes(ext);
+            const isDoc = fileExts.includes(ext);
+
+            if (!isImage && !isDoc) {
+                alert("Định dạng không hỗ trợ! Chỉ chấp nhận ảnh (.jpg, .png, .webp) hoặc file (.pdf, .docx, .xlsx, .pptx, .zip, .txt).");
+                this.value = "";
+                return;
+            }
+
+            const maxBytes = isImage ? 10 * 1024 * 1024 : 50 * 1024 * 1024;
+            if (file.size > maxBytes) {
+                alert(isImage ? "Ảnh vượt quá giới hạn 10 MB!" : "File đính kèm vượt quá giới hạn 50 MB!");
+                this.value = "";
+                return;
+            }
+
             const formData = new FormData();
             formData.append("conversationId", activeConvId);
             formData.append("file", file);
@@ -179,45 +389,24 @@ document.addEventListener("DOMContentLoaded", function () {
         const chatHeaderName = document.getElementById("chatHeaderName");
         if (chatHeaderName) chatHeaderName.textContent = convName;
 
-        if (chatStream) {
-            chatStream.innerHTML = "";
-            if (data.messages && data.messages.length > 0) {
-                data.messages.forEach(msg => {
-                    const initials = msg.senderName ? msg.senderName.split(' ').map(n => n[0]).slice(-2).join('') : 'U';
-                    const row = document.createElement("div");
-                    row.className = `msg-row ${msg.isSelf ? 'outgoing' : 'incoming'}`;
-                    row.innerHTML = `
-                        <div class="msg-avatar" title="${escapeHtml(msg.senderName)}">${initials}</div>
-                        <div class="msg-bubble-wrap">
-                            ${!msg.isSelf ? `<div class="msg-sender-name">${escapeHtml(msg.senderName)}</div>` : ''}
-                            <div class="msg-bubble">${escapeHtml(msg.content)}</div>
-                            <div class="msg-time">${msg.formattedTime}</div>
-                        </div>
-                    `;
-                    chatStream.appendChild(row);
-                });
-            } else {
-                chatStream.innerHTML = `<div class="text-center text-muted py-5">Chưa có tin nhắn nào. Hãy gửi lời chào nhé! 👋</div>`;
-            }
-            chatStream.scrollTop = chatStream.scrollHeight;
-        }
+        renderMessagesList(data.messages || [], data.attachments || []);
 
         const memberList = document.getElementById("directoryMemberList");
         const memberCount = document.getElementById("directoryMemberCount");
         if (memberList && data.members) {
             if (memberCount) memberCount.textContent = data.members.length;
             memberList.innerHTML = data.members.map(m => {
-                const initials = m.displayName ? m.displayName.split(' ').map(n => n[0]).slice(-2).join('') : 'U';
+                const initials = m.displayName ? m.displayName.split(" ").map(n => n[0]).slice(-2).join("") : "U";
                 return `
                     <div class="member-item">
                         <div class="member-avatar">${initials}</div>
                         <div class="member-details">
                             <h6>${escapeHtml(m.displayName)}</h6>
-                            <p>${escapeHtml(m.bio || (m.role === 'Admin' ? 'Trưởng nhóm' : 'Thành viên'))}</p>
+                            <p>${escapeHtml(m.bio || (m.role === "Admin" ? "Trưởng nhóm" : "Thành viên"))}</p>
                         </div>
                     </div>
                 `;
-            }).join('');
+            }).join("");
         }
 
         updateFilesList(data.attachments || []);
@@ -257,7 +446,7 @@ document.addEventListener("DOMContentLoaded", function () {
                         <i class="bi bi-download"></i>
                     </a>
                 </div>
-            `).join('');
+            `).join("");
         } else {
             fileList.innerHTML = `<p class="text-muted small my-2">Chưa có tệp chia sẻ nào.</p>`;
         }
@@ -271,11 +460,7 @@ document.addEventListener("DOMContentLoaded", function () {
             document.querySelectorAll(".conv-item").forEach(item => {
                 const name = item.querySelector(".conv-name")?.textContent.toLowerCase() || "";
                 const preview = item.querySelector(".conv-preview")?.textContent.toLowerCase() || "";
-                if (name.includes(query) || preview.includes(query)) {
-                    item.style.display = "flex";
-                } else {
-                    item.style.display = "none";
-                }
+                item.style.display = (name.includes(query) || preview.includes(query)) ? "flex" : "none";
             });
         });
     }
@@ -301,7 +486,7 @@ document.addEventListener("DOMContentLoaded", function () {
                                 <span class="text-muted small">(${escapeHtml(f.email)})</span>
                             </label>
                         </div>
-                    `).join('');
+                    `).join("");
                 } else {
                     friendsSelectionList.innerHTML = `<div class="text-center text-muted py-3 small">Chưa có bạn bè nào để tạo nhóm.<br /><a href="/Friend/Search" class="btn btn-sm btn-link">Tìm bạn bè ngay</a></div>`;
                 }
@@ -353,8 +538,8 @@ document.addEventListener("DOMContentLoaded", function () {
     }
 
     function escapeHtml(str) {
-        if (!str) return '';
-        const div = document.createElement('div');
+        if (!str) return "";
+        const div = document.createElement("div");
         div.textContent = str;
         return div.innerHTML;
     }
