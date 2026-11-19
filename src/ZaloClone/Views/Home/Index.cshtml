@@ -52,15 +52,22 @@
                 </nav>
             </div>
 
-            <!-- Profile & Logout Bottom -->
-            <div class="user-profile-menu">
-                <a href="/Profile" class="avatar-mini text-decoration-none" title="@Model.CurrentUser.DisplayName (Trang cá nhân)">
-                    @(Model.CurrentUser.DisplayName.Length > 0 ? Model.CurrentUser.DisplayName.Substring(0, 1) : "U")
-                </a>
-                <a href="/Account/Logout" class="nav-item-btn text-danger" title="Đăng xuất">
-                    <i class="bi bi-box-arrow-right"></i>
-                </a>
-            </div>
+			<!-- Profile & Logout Bottom -->
+			<div class="user-profile-menu">
+				<a href="/Profile" class="avatar-mini text-decoration-none" title="@Model.CurrentUser.DisplayName (Trang cá nhân)">
+					@if (!string.IsNullOrWhiteSpace(Model.CurrentUser.AvatarUrl))
+					{
+						<img src="@Model.CurrentUser.AvatarUrl" alt="@Model.CurrentUser.DisplayName" class="avatar-img" />
+					}
+					else
+					{
+						@(Model.CurrentUser.DisplayName.Length > 0 ? Model.CurrentUser.DisplayName.Substring(0, 1) : "U")
+					}
+				</a>
+				<a href="/Account/Logout" class="nav-item-btn text-danger" title="Đăng xuất">
+					<i class="bi bi-box-arrow-right"></i>
+				</a>
+			</div>
         </aside>
 
 
@@ -93,13 +100,22 @@
                     {
                         var initial = !string.IsNullOrEmpty(conv.Title) ? conv.Title.Substring(0, 1) : "Z";
                         <a href="?conversationId=@conv.Id" class="conv-item @(conv.IsActive ? "active" : "")" data-id="@conv.Id">
-                            <div class="conv-avatar-wrap">
-                                <div class="conv-avatar">@initial</div>
-                                @if (conv.IsOnline)
-                                {
-                                    <span class="online-indicator"></span>
-                                }
-                            </div>
+							<div class="conv-avatar-wrap">
+								<div class="conv-avatar">
+									@if (!string.IsNullOrWhiteSpace(conv.AvatarUrl))
+									{
+										<img src="@conv.AvatarUrl" alt="@conv.Title" class="avatar-img" />
+									}
+									else
+									{
+										@initial
+									}
+								</div>
+								@if (conv.IsOnline)
+								{
+									<span class="online-indicator"></span>
+								}
+							</div>
                             <div class="conv-info">
                                 <div class="conv-info-top">
                                     <span class="conv-name">@conv.Title</span>
@@ -131,9 +147,16 @@
                 <!-- Header -->
                 <header class="chat-header">
                     <div class="user-meta">
-                        <div class="avatar-chat">
-                            @(!string.IsNullOrEmpty(activeConv.Title) ? activeConv.Title.Substring(0, 1) : "C")
-                        </div>
+						<div class="avatar-chat" id="chatHeaderAvatar">
+							@if (!string.IsNullOrWhiteSpace(activeConv.AvatarUrl))
+							{
+								<img src="@activeConv.AvatarUrl" alt="@activeConv.Title" class="avatar-img" />
+							}
+							else
+							{
+								@(!string.IsNullOrEmpty(activeConv.Title) ? activeConv.Title.Substring(0, 1) : "C")
+							}
+						</div>
                         <div class="name-status">
                             <h5 id="chatHeaderName">@activeConv.Title</h5>
                             <div class="status-badge">
@@ -161,8 +184,17 @@
                         {
                             var msgInitial = !string.IsNullOrEmpty(msg.SenderName) ? msg.SenderName.Substring(0, 1) : "U";
                             <div class="msg-row @(msg.IsSelf ? "outgoing" : "incoming")">
-                                <div class="msg-avatar" title="@msg.SenderName">@msgInitial</div>
-                                <div class="msg-bubble-wrap">
+								<div class="msg-avatar" title="@msg.SenderName">
+									@if (!string.IsNullOrWhiteSpace(msg.SenderAvatar))
+									{
+										<img src="@msg.SenderAvatar" alt="@msg.SenderName" class="avatar-img" />
+									}
+									else
+									{
+										@msgInitial
+									}
+								</div>
+								<div class="msg-bubble-wrap">
                                     @if (!msg.IsSelf)
                                     {
                                         <div class="msg-sender-name">@msg.SenderName</div>
@@ -224,7 +256,16 @@
                         {
                             var mInitial = !string.IsNullOrEmpty(m.DisplayName) ? m.DisplayName.Substring(0, 1) : "U";
                             <div class="member-item">
-                                <div class="member-avatar">@mInitial</div>
+								<div class="member-avatar">
+									@if (!string.IsNullOrWhiteSpace(m.AvatarUrl))
+									{
+										<img src="@m.AvatarUrl" alt="@m.DisplayName" class="avatar-img" />
+									}
+									else
+									{
+										@mInitial
+									}
+								</div>
                                 <div class="member-details">
                                     <h6>@m.DisplayName</h6>
                                     <p>@m.Bio</p>
@@ -284,18 +325,22 @@
                     <h5 class="modal-title fw-bold" id="createGroupModalLabel">Tạo nhóm trò chuyện</h5>
                     <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
                 </div>
-                <div class="modal-body">
-                    <div class="mb-3">
-                        <label class="form-label small fw-semibold">Tên nhóm</label>
-                        <input type="text" id="newGroupTitle" class="form-control rounded-3" placeholder="Nhập tên nhóm trò chuyện..." required />
-                    </div>
-                    <div class="mb-3">
-                        <label class="form-label small fw-semibold">Chọn bạn bè vào nhóm</label>
-                        <div id="friendsSelectionList" class="border rounded-3 p-2" style="max-height: 220px; overflow-y: auto;">
-                            <div class="text-center text-muted py-3 small">Đang tải danh sách bạn bè...</div>
-                        </div>
-                    </div>
-                </div>
+				<div class="modal-body">
+					<div class="mb-3">
+						<label class="form-label small fw-semibold">Tên nhóm</label>
+						<input type="text" id="newGroupTitle" class="form-control rounded-3" placeholder="Nhập tên nhóm trò chuyện..." required />
+					</div>
+					<div class="mb-3">
+						<label class="form-label small fw-semibold">Ảnh đại diện nhóm (Tùy chọn)</label>
+						<input type="file" id="newGroupAvatar" class="form-control rounded-3" accept=".jpg,.jpeg,.png,.webp" />
+					</div>
+					<div class="mb-3">
+						<label class="form-label small fw-semibold">Chọn bạn bè vào nhóm</label>
+						<div id="friendsSelectionList" class="border rounded-3 p-2" style="max-height: 220px; overflow-y: auto;">
+							<div class="text-center text-muted py-3 small">Đang tải danh sách bạn bè...</div>
+						</div>
+					</div>
+				</div>
                 <div class="modal-footer border-top-0 pt-0">
                     <button type="button" class="btn btn-light rounded-pill px-3" data-bs-dismiss="modal">Hủy</button>
                     <button type="button" id="btnSubmitCreateGroup" class="btn btn-primary rounded-pill px-4">Tạo nhóm</button>

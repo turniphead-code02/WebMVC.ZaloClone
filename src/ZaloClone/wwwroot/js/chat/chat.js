@@ -27,6 +27,9 @@ document.addEventListener("DOMContentLoaded", function () {
         if (msg.conversationId === activeConvId && chatStream) {
             const isSelf = msg.senderId === currentUserId;
             const initials = msg.senderName ? msg.senderName.split(' ').map(n => n[0]).slice(-2).join('') : 'U';
+            const avatarHtml = msg.senderAvatar
+                ? `<img src="${escapeHtml(msg.senderAvatar)}" alt="${escapeHtml(msg.senderName)}" class="avatar-img" />`
+                : initials;
 
             let bubbleContent = escapeHtml(msg.content);
             if (msg.messageType === 'Image' && msg.fileUrl) {
@@ -38,7 +41,7 @@ document.addEventListener("DOMContentLoaded", function () {
             const row = document.createElement("div");
             row.className = `msg-row ${isSelf ? 'outgoing' : 'incoming'}`;
             row.innerHTML = `
-                <div class="msg-avatar" title="${escapeHtml(msg.senderName)}">${initials}</div>
+                <div class="msg-avatar" title="${escapeHtml(msg.senderName)}">${avatarHtml}</div>
                 <div class="msg-bubble-wrap">
                     ${!isSelf ? `<div class="msg-sender-name">${escapeHtml(msg.senderName)}</div>` : ''}
                     <div class="msg-bubble">${bubbleContent}</div>
@@ -179,15 +182,25 @@ document.addEventListener("DOMContentLoaded", function () {
         const chatHeaderName = document.getElementById("chatHeaderName");
         if (chatHeaderName) chatHeaderName.textContent = convName;
 
+        // Đồng bộ ảnh đại diện từ Cột 2 lên Header Cột 3 khi chuyển hội thoại
+        const convAvatarEl = convItem.querySelector(".conv-avatar");
+        const chatHeaderAvatar = document.querySelector(".avatar-chat");
+        if (convAvatarEl && chatHeaderAvatar) {
+            chatHeaderAvatar.innerHTML = convAvatarEl.innerHTML;
+        }
+
         if (chatStream) {
             chatStream.innerHTML = "";
             if (data.messages && data.messages.length > 0) {
                 data.messages.forEach(msg => {
                     const initials = msg.senderName ? msg.senderName.split(' ').map(n => n[0]).slice(-2).join('') : 'U';
+                    const avatarHtml = msg.senderAvatar
+                        ? `<img src="${escapeHtml(msg.senderAvatar)}" alt="${escapeHtml(msg.senderName)}" class="avatar-img" />`
+                        : initials;
                     const row = document.createElement("div");
                     row.className = `msg-row ${msg.isSelf ? 'outgoing' : 'incoming'}`;
                     row.innerHTML = `
-                        <div class="msg-avatar" title="${escapeHtml(msg.senderName)}">${initials}</div>
+                        <div class="msg-avatar" title="${escapeHtml(msg.senderName)}">${avatarHtml}</div>
                         <div class="msg-bubble-wrap">
                             ${!msg.isSelf ? `<div class="msg-sender-name">${escapeHtml(msg.senderName)}</div>` : ''}
                             <div class="msg-bubble">${escapeHtml(msg.content)}</div>
@@ -208,9 +221,12 @@ document.addEventListener("DOMContentLoaded", function () {
             if (memberCount) memberCount.textContent = data.members.length;
             memberList.innerHTML = data.members.map(m => {
                 const initials = m.displayName ? m.displayName.split(' ').map(n => n[0]).slice(-2).join('') : 'U';
+                const avatarHtml = m.avatarUrl
+                    ? `<img src="${escapeHtml(m.avatarUrl)}" alt="${escapeHtml(m.displayName)}" class="avatar-img" />`
+                    : initials;
                 return `
                     <div class="member-item">
-                        <div class="member-avatar">${initials}</div>
+                        <div class="member-avatar">${avatarHtml}</div>
                         <div class="member-details">
                             <h6>${escapeHtml(m.displayName)}</h6>
                             <p>${escapeHtml(m.bio || (m.role === 'Admin' ? 'Trưởng nhóm' : 'Thành viên'))}</p>
@@ -326,6 +342,11 @@ document.addEventListener("DOMContentLoaded", function () {
             const formData = new FormData();
             formData.append("Title", title);
             checkedFriendIds.forEach(id => formData.append("MemberIds", id));
+
+            const avatarInput = document.getElementById("newGroupAvatar");
+            if (avatarInput && avatarInput.files && avatarInput.files.length > 0) {
+                formData.append("Avatar", avatarInput.files[0]);
+            }
 
             this.disabled = true;
             this.textContent = "Đang tạo...";
