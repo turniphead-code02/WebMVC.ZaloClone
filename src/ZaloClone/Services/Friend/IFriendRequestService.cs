@@ -18,4 +18,9 @@ public interface IFriendRequestService
     Task<ApiResponse> RejectRequestAsync(Guid currentUserId, Guid requestId);
 
     Task<ApiResponse> BlockAsync(Guid currentUserId, Guid friendId);
+
+    //GIAI ĐOẠN 2: Task 1 (nút Nhắn tin) và Task 2 (badge thông báo)
+    Task<ApiResponse<DirectChatResultViewModel>> GetOrCreateDirectConversationAsync(Guid currentUserId, Guid friendId);
+
+    Task<int> CountIncomingPendingAsync(Guid currentUserId);
 }

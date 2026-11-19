@@ -401,6 +401,187 @@ public class FriendRequestService : IFriendRequestService
         return ApiResponse.Ok("Đã chặn người dùng.");
     }
 
+    // 10. MỞ HOẶC TẠO CHAT 1-1 VỚI BẠN BÈ
+    public async Task<ApiResponse<DirectChatResultViewModel>> GetOrCreateDirectConversationAsync(Guid currentUserId, Guid friendId)
+    {
+        if (friendId == Guid.Empty || friendId == currentUserId)
+        {
+            return ApiResponse<DirectChatResultViewModel>.Fail("Người nhận không hợp lệ.");
+        }
+
+        var friendExists = await _db.Users.AsNoTracking()
+            .AnyAsync(u => u.Id == friendId && !u.IsDeleted && !u.IsLocked);
+        if (!friendExists)
+        {
+            return ApiResponse<DirectChatResultViewModel>.Fail("Người dùng không tồn tại hoặc đã bị khóa.");
+        }
+
+        var (u1, u2) = UserPair.Order(currentUserId, friendId);
+
+        // Chỉ được nhắn tin với người đã là bạn bè (kiểm tra ở server, không tin nút bấm ở giao diện)
+        if (!await _db.Friendships.AnyAsync(f => f.UserId1 == u1 && f.UserId2 == u2))
+        {
+            return ApiResponse<DirectChatResultViewModel>.Fail("Hai bạn chưa là bạn bè.");
+        }
+
+        // Có chặn (một trong hai chiều) thì không mở được chat
+        var blocked = await _db.UserBlocks.AnyAsync(b =>
+            (b.BlockerId == currentUserId && b.BlockedId == friendId) ||
+            (b.BlockerId == friendId && b.BlockedId == currentUserId));
+        if (blocked)
+        {
+            return ApiResponse<DirectChatResultViewModel>.Fail("Không thể nhắn tin cho người dùng này.");
+        }
+
+        var conversationId = await FindDirectConversationIdAsync(u1, u2);
+
+        if (conversationId == null)
+        {
+            // Chưa có -> tạo mới: 1 Conversation + 1 DirectConversation + 2 ConversationMember (cùng 1 lần lưu)
+            var conversation = new Conversation
+            {
+                IsGroup = false,
+                CreatedById = currentUserId
+            };
+
+            _db.Conversations.Add(conversation);
+            _db.DirectConversations.Add(new DirectConversation
+            {
+                ConversationId = conversation.Id,
+                IsGroup = false,
+                UserId1 = u1,
+                UserId2 = u2
+            });
+            _db.ConversationMembers.Add(new ConversationMember
+            {
+                ConversationId = conversation.Id,
+                UserId = currentUserId,
+                Role = "Member"
+            });
+            _db.ConversationMembers.Add(new ConversationMember
+            {
+                ConversationId = conversation.Id,
+                UserId = friendId,
+                Role = "Member"
+            });
+
+            try
+            {
+                await _db.SaveChangesAsync();
+                conversationId = conversation.Id;
+            }
+            catch (DbUpdateException ex)
+            {
+                // Hai người cùng bấm "Nhắn tin" một lúc: unique uq_direct_conversations_pair chặn bản thứ hai.
+                // Bỏ bản nháp vừa thêm rồi lấy lại hội thoại đã được người kia tạo.
+                _logger.LogWarning(ex, "Tạo chat 1-1 trùng giữa {A} và {B}, lấy lại hội thoại có sẵn", u1, u2);
+                _db.ChangeTracker.Clear();
+                conversationId = await FindDirectConversationIdAsync(u1, u2);
+
+                if (conversationId == null)
+                {
+                    return ApiResponse<DirectChatResultViewModel>.Fail("Không thể tạo cuộc trò chuyện. Vui lòng thử lại.");
+                }
+            }
+        }
+        else
+        {
+            await EnsureDirectMembersAsync(conversationId.Value, currentUserId, friendId);
+        }
+
+        return ApiResponse<DirectChatResultViewModel>.Ok(new DirectChatResultViewModel
+        {
+            ConversationId = conversationId.Value
+        });
+    }
+
+    // 11. (GIAI ĐOẠN 2 - TASK 2) ĐẾM LỜI MỜI ĐẾN ĐANG CHỜ -> số trên badge icon Bạn bè
+    public Task<int> CountIncomingPendingAsync(Guid currentUserId)
+    {
+        return _db.FriendRequests.AsNoTracking()
+            .CountAsync(r => r.ReceiverId == currentUserId && r.Status == "Pending");
+    }
+
+    // Helpers
+
+    private Task<Guid?> FindDirectConversationIdAsync(Guid userId1, Guid userId2)
+    {
+        return _db.DirectConversations.AsNoTracking()
+            .Where(d => d.UserId1 == userId1 && d.UserId2 == userId2)
+            .Select(d => (Guid?)d.ConversationId)
+            .FirstOrDefaultAsync();
+    }
+
+    // Bảo đảm cả hai người đều là thành viên đang hoạt động của hội thoại 1-1 đã có
+    private async Task EnsureDirectMembersAsync(Guid conversationId, Guid userA, Guid userB)
+    {
+        var members = await _db.ConversationMembers
+            .Where(m => m.ConversationId == conversationId && (m.UserId == userA || m.UserId == userB))
+            .ToListAsync();
+
+        var changed = false;
+        foreach (var uid in new[] { userA, userB })
+        {
+            var member = members.FirstOrDefault(m => m.UserId == uid);
+            if (member == null)
+            {
+                _db.ConversationMembers.Add(new ConversationMember
+                {
+                    ConversationId = conversationId,
+                    UserId = uid,
+                    Role = "Member"
+                });
+                changed = true;
+            }
+            else if (member.LeftAt != null)
+            {
+                member.LeftAt = null;
+                changed = true;
+            }
+        }
+
+        if (!changed)
+        {
+            return;
+        }
+
+        try
+        {
+            await _db.SaveChangesAsync();
+        }
+        catch (DbUpdateException ex)
+        {
+            _logger.LogWarning(ex, "Không cập nhật được thành viên hội thoại {ConversationId}", conversationId);
+        }
+    }
+
+    // Task 2: người nhận lời mời vừa chấp nhận -> báo cho NGƯỜI GỬI (sự kiện FriendshipChanged theo CONVENTIONS mục 7)
+    private async Task NotifyRequestAcceptedAsync(Guid senderId, Guid accepterId)
+    {
+        try
+        {
+            var accepter = await _db.Users.AsNoTracking()
+                .Where(u => u.Id == accepterId)
+                .Select(u => new { u.DisplayName, u.AvatarUrl })
+                .FirstAsync();
+
+            await _hub.Clients.Group(ChatHub.GetUserGroupName(senderId))
+                .SendAsync("FriendshipChanged", new
+                {
+                    userId = accepterId,
+                    action = "accepted",
+                    displayName = accepter.DisplayName,
+                    avatarUrl = accepter.AvatarUrl
+                });
+        }
+        catch (Exception ex)
+        {
+            // Lỗi real-time không được làm hỏng việc chấp nhận kết bạn (đã lưu DB)
+            _logger.LogWarning(ex, "Không đẩy được FriendshipChanged tới {Sender}", senderId);
+        }
+    }
+
+
     // Helpers
 
     private async Task NotifyReceiverAsync(FriendRequest request)

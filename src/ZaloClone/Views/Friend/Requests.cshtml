@@ -1,0 +1,54 @@
+@model List<ZaloClone.Models.ViewModels.Friend.IncomingFriendRequestViewModel>
+@{
+    ViewData["Title"] = "Lời mời kết bạn";
+}
+
+<div class="container py-4">
+    <div class="d-flex flex-wrap justify-content-between align-items-center gap-2 mb-4">
+        <div>
+            <h1 class="h3 mb-1">Lời mời kết bạn</h1>
+            <p class="text-muted mb-0">Xem và phản hồi những lời mời đang chờ.</p>
+        </div>
+        <a class="btn btn-outline-primary" asp-controller="Friend" asp-action="List">Danh sách bạn bè</a>
+    </div>
+
+    @Html.AntiForgeryToken()
+    <div id="friendActionMessage" class="alert d-none" role="status"></div>
+
+    @if (Model.Count == 0)
+    {
+        <div class="card card-body text-center py-5">
+            <h2 class="h5">Chưa có lời mời nào</h2>
+            <p class="text-muted mb-0">Lời mời kết bạn mới sẽ xuất hiện ở đây.</p>
+        </div>
+    }
+    else
+    {
+        <div class="list-group">
+            @foreach (var request in Model)
+            {
+                <div class="list-group-item d-flex flex-wrap align-items-center gap-3" data-request-row="@request.RequestId">
+                    @if (!string.IsNullOrWhiteSpace(request.AvatarUrl))
+                    {
+                        <img src="@request.AvatarUrl" alt="" class="rounded-circle" width="48" height="48" style="object-fit: cover" />
+                    }
+                    else
+                    {
+                        <div class="rounded-circle bg-secondary text-white d-flex align-items-center justify-content-center fw-semibold" style="width:48px;height:48px">
+                            @(string.IsNullOrWhiteSpace(request.DisplayName) ? "?" : request.DisplayName[..1].ToUpperInvariant())
+                        </div>
+                    }
+                    <div class="flex-grow-1 fw-semibold">@request.DisplayName</div>
+                    <div class="d-flex gap-2">
+                        <button type="button" class="btn btn-primary btn-sm" data-request-action="accept" data-request-id="@request.RequestId" data-url="@Url.Action("AcceptRequest", "Friend")">Chấp nhận</button>
+                        <button type="button" class="btn btn-outline-secondary btn-sm" data-request-action="reject" data-request-id="@request.RequestId" data-url="@Url.Action("RejectRequest", "Friend")">Từ chối</button>
+                    </div>
+                </div>
+            }
+        </div>
+    }
+</div>
+
+@section Scripts {
+    <script src="~/js/friend/friend-actions.js" asp-append-version="true"></script>
+}
