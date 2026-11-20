@@ -15,6 +15,7 @@ public class GroupsController : Controller
     // Giống Zalo: nhóm cần ít nhất 3 người (người tạo + 2 người khác).
     public const int MinOtherMembers = 2;
     private const int PageSize = 50;
+    private const int MediaPanelSize = 40;
 
     private readonly ApplicationDbContext _db;
     private readonly UserManager<ApplicationUser> _users;
@@ -124,6 +125,11 @@ public class GroupsController : Controller
             Members = await _db.LoadMembersAsync(id),
             Messages = messages,
             HasMoreMessages = hasMore,
+            Files = (await _db.GroupMessages
+                    .Where(m => m.ChatGroupId == id && m.Type == MessageType.File)
+                    .OrderByDescending(m => m.Id).Take(MediaPanelSize)
+                    .Include(m => m.Sender).ToListAsync())
+                .Select(MessageDto.From).ToList(),
             AllUsers = (await _users.Users.ToListAsync())
                 .Select(u => new UserOptionDto(u.Id, u.DisplayName)).OrderBy(u => u.Name).ToList(),
             Conversations = await _db.LoadConversationsAsync(CurrentUserId)
