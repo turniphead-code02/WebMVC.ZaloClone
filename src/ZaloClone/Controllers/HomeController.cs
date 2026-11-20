@@ -41,10 +41,10 @@ public class HomeController : Controller
             .Where(m => m.UserId == currentUserId && m.LeftAt == null)
             .Include(m => m.Conversation)
                 .ThenInclude(c => c.DirectConversation)
-                    .ThenInclude(d => d.User1)
+                    .ThenInclude(d => d!.User1)
             .Include(m => m.Conversation)
                 .ThenInclude(c => c.DirectConversation)
-                    .ThenInclude(d => d.User2)
+                    .ThenInclude(d => d!.User2)
             .Include(m => m.Conversation)
                 .ThenInclude(c => c.LastMessage)
                     .ThenInclude(lm => lm!.Sender)
@@ -80,7 +80,7 @@ public class HomeController : Controller
 
             var lastMsg = c.LastMessage;
             string preview = lastMsg != null
-                ? (lastMsg.SenderId == currentUserId ? $"Bạn: {lastMsg.Content}" : lastMsg.Content)
+                ? (lastMsg.SenderId == currentUserId ? $"Bạn: {lastMsg.Content}" : (lastMsg.Content ?? ""))
                 : "Chưa có tin nhắn";
 
             string formattedTime = "";

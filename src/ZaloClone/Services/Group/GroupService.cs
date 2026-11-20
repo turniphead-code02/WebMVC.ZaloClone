@@ -310,7 +310,7 @@ public class GroupService : IGroupService
         var dto = new GroupDetailDto
         {
             Id = group.Id,
-            Title = group.Title,
+            Title = group.Title ?? "Nhóm chat",
             AvatarUrl = group.AvatarUrl,
             MemberCount = group.Members.Count,
             CreatedById = group.CreatedById ?? Guid.Empty,
