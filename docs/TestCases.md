@@ -79,7 +79,21 @@ _Đang soạn._
 
 ### 4. Hạ tầng (INF) — Lead, Cặp 5
 
-_Đang soạn._
+Code liên quan: `.github/workflows/build.yml`, `docker-compose.yml`, `global.json`, `Program.cs`, `Migrations/`, `Data/SeedData.cs`.
+
+| ID | Tình huống | Tiền điều kiện | Các bước | Mong đợi | Kết quả | Issue |
+|---|---|---|---|---|---|---|
+| INF-01 | Build sạch như CI | Code mới nhất `develop` | `dotnet build ZaloClone.sln -c Release -warnaserror` | 0 warning, 0 error | ✅ Pass | |
+| INF-02 | CI GitHub Actions | — | Push lên `develop`, mở tab Actions | Workflow `Build` xanh (restore, build, test) | ✅ Pass | |
+| INF-03 | Dựng DB từ đầu | Docker Desktop chạy, có `.env` | `docker compose down -v` → `docker compose up -d` → `dotnet ef database update --project src/ZaloClone` | Container `zalo_clone_db` healthy, áp dụng hết migration không lỗi | ✅ Pass | |
+| INF-04 | Seed dữ liệu mẫu | DB vừa tạo, môi trường Development | Chạy web lần đầu | Có `admin@zalo.local`, `user1@zalo.local`… đăng nhập được bằng `Test@123`, có sẵn hội thoại mẫu | ✅ Pass | |
+| INF-05 | Seed không nhân đôi | Đã chạy web ít nhất 1 lần | Tắt web và chạy lại 2–3 lần | Không bị lỗi trùng khóa, không nhân đôi user/hội thoại | ⬜ Chưa test | |
+| INF-06 | Thiếu chuỗi kết nối | Xóa User Secrets | Chạy web | Báo lỗi kết nối DB rõ ràng. Hiện `Program.cs` tự dùng mật khẩu mặc định `YourSecurePassword2026` ghi cứng trong code, nên ghi lại thông báo lỗi thực tế | ⬜ Chưa test | |
+| INF-07 | Chạy profile https | — | `dotnet run --project src/ZaloClone --launch-profile https` | Mở được `https://localhost:7177`, không còn cảnh báo `Failed to determine the https port` | ⬜ Chưa test | |
+| INF-08 | Hai endpoint SignalR | Đã đăng nhập | Mở DevTools → Network → WS | Client kết nối `/hubs/chat` (hoặc `/chathub`) thành công; ghi lại client đang dùng endpoint nào. `Program.cs` map cùng `ChatHub` vào cả 2 đường | ⬜ Chưa test | |
+| INF-09 | Không commit bí mật | — | `git ls-files` tìm `.env`, `uploads/`, `appsettings.*.json` có mật khẩu | Không có file bí mật nào được commit | ⬜ Chưa test | |
+| INF-10 | Clone mới trên máy khác | Máy chưa có repo | Làm đúng theo `README.md` mục cài đặt | Chạy được web, không cần bước ngoài README. Thiếu bước nào thì ghi lại (ví dụ: README chưa nhắc cài `dotnet-ef` khi không dùng Visual Studio) | ⬜ Chưa test | |
+
 
 ---
 
