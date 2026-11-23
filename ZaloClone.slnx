@@ -2,4 +2,7 @@
   <Folder Name="/src/">
     <Project Path="src/ZaloClone/ZaloClone.csproj" />
   </Folder>
+  <Folder Name="/tests/">
+    <Project Path="tests/ZaloClone.Tests/ZaloClone.Tests.csproj" />
+  </Folder>
 </Solution>
