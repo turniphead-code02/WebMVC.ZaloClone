@@ -75,7 +75,48 @@ Phần hiện avatar ở 4 cột (commit `ef63864`) mới nằm ở nhánh `tung
 
 ### 3. Chat 1-1 (CHAT) — Khôi, Sang
 
-_Đang soạn._
+Code liên quan: `Controllers/HomeController.cs`, `Controllers/ChatController.cs`, `Services/Chat/ChatService.cs`, `Hubs/ChatHub.cs`, `wwwroot/js/chat/chat.js`.
+Giao diện gửi tin qua hub `SendMessage`; khi mất kết nối thì gọi `POST /Chat/SendMessage`. `HomeController.SendMessage` hiện không được giao diện gọi tới.
+
+**Chức năng cơ bản (đã có)**
+
+| ID | Tình huống | Tiền điều kiện | Các bước | Mong đợi | Kết quả | Issue |
+|---|---|---|---|---|---|---|
+| CHAT-01 | Gửi tin văn bản real-time | A, B là bạn, có hội thoại 1-1, mở 2 trình duyệt | A gửi "xin chào" | B thấy tin ngay, không cần F5; tin đúng thứ tự, đúng giờ Việt Nam | ⬜ Chưa test | |
+| CHAT-02 | Tin rỗng / chỉ khoảng trắng | Như CHAT-01 | Bấm gửi khi ô trống hoặc chỉ có dấu cách | Không gửi gì | ⬜ Chưa test | |
+| CHAT-03 | Emoji và ký tự đặc biệt | Như CHAT-01 | Gửi emoji, tiếng Việt có dấu, `<b>test</b>`, `<script>alert(1)</script>` | Hiện đúng nguyên văn, không thực thi HTML/JS (cả lúc nhận real-time và sau F5) | ⬜ Chưa test | |
+| CHAT-04 | Tin nhắn rất dài | Như CHAT-01 | Dán đoạn văn 10.000 ký tự rồi gửi | Bị chặn hoặc giới hạn độ dài hợp lý. **Code hiện không giới hạn độ dài** | ⬜ Chưa test | |
+| CHAT-05 | Hội thoại hơn 50 tin | Hội thoại có > 50 tin | Gửi thêm tin mới → F5 / chuyển sang hội thoại khác rồi quay lại | Hiện các tin **mới nhất**. `GetConversationData` đang `OrderBy(CreatedAt).Take(50)` nên nghi chỉ lấy 50 tin **cũ nhất** | ⬜ Chưa test | |
+| CHAT-06 | Gửi ảnh | Như CHAT-01 | Gửi `.jpg`/`.png`/`.gif`/`.webp` < 10 MB | Cả hai bên thấy ảnh ngay; F5 vẫn hiện ảnh | ⬜ Chưa test | |
+| CHAT-07 | Gửi file | Như CHAT-01 | Gửi `.pdf`, `.docx`, `.xlsx`, `.zip`, `.txt` | Hiện tên + dung lượng; bấm tải về được | ⬜ Chưa test | |
+| CHAT-08 | Link file sau khi F5 | Đã làm CHAT-06/07 | F5 → bấm ảnh/file trong khung chat và ở panel tệp đã gửi (Cột 4) | Mở/tải được. **Nghi lỗi:** `chat.js:178` và `:445` ghép `/uploads/${storageKey}` mà `storageKey` đã bắt đầu bằng `uploads/` → link `/uploads/uploads/…` bị 404 | ⬜ Chưa test | |
+| CHAT-09 | Sai định dạng file | Như CHAT-01 | Gửi `.exe`, `.bat`, `.mp4` | Báo định dạng không hỗ trợ, không tạo tin | ⬜ Chưa test | |
+| CHAT-10 | Vượt dung lượng | Như CHAT-01 | Gửi ảnh 11 MB; file 35 MB; file 51 MB | Báo vượt giới hạn bằng thông báo tiếng Việt. **Nghi lỗi:** không cấu hình `RequestSizeLimit`, Kestrel mặc định chặn ~28,6 MB nên file 30–50 MB có thể báo lỗi 413 dù quy định cho phép 50 MB | ⬜ Chưa test | |
+| CHAT-11 | Thu hồi tin của mình | Như CHAT-01 | A thu hồi tin vừa gửi | Cả hai bên thấy "Tin nhắn đã được thu hồi" ngay | ⬜ Chưa test | |
+| CHAT-12 | Tin đã thu hồi sau khi F5 | Đã làm CHAT-11 | Cả A và B F5, chuyển hội thoại rồi quay lại, xem dòng xem trước ở Cột 2 | Vẫn hiện "đã thu hồi". **Nghi lỗi:** `HomeController` (Index, `GetConversationData`, xem trước Cột 2) không kiểm tra `IsRecalled` nên nội dung gốc hiện lại | ⬜ Chưa test | |
+| CHAT-13 | Không thu hồi được tin người khác | Như CHAT-01 | B gọi thu hồi tin của A (qua DevTools: `POST /Chat/RecallMessage` với `messageId` của A) | Bị từ chối | ⬜ Chưa test | |
+| CHAT-14 | Thu hồi tin có file | Đã gửi file | Thu hồi tin chứa file → mở lại link file cũ | Link file không còn tải được. Code hiện giữ nguyên file trên ổ đĩa; ghi lại kết quả | ⬜ Chưa test | |
+
+**Bảo mật**
+
+| ID | Tình huống | Tiền điều kiện | Các bước | Mong đợi | Kết quả | Issue |
+|---|---|---|---|---|---|---|
+| CHAT-15 | Xem hội thoại không phải của mình | C không thuộc hội thoại A–B, biết `conversationId` | C đăng nhập, mở `/Home/GetConversationData?conversationId=<id A–B>` và `/?conversationId=<id A–B>` | Bị từ chối (403/404). **Nghi lỗi:** `GetConversationData` không kiểm tra thành viên nên trả về toàn bộ tin nhắn | ⬜ Chưa test | |
+| CHAT-16 | Gửi tin vào hội thoại không phải của mình | Như CHAT-15 | C gọi `POST /Chat/SendMessage` với `conversationId` của A–B | Bị từ chối, A và B không nhận được gì | ⬜ Chưa test | |
+| CHAT-17 | File chat truy cập công khai | Đã gửi file | Copy link file → mở bằng tab ẩn danh (chưa đăng nhập) | Ghi lại kết quả. File đang nằm trong `wwwroot/uploads` nên ai có link cũng tải được | ⬜ Chưa test | |
+| CHAT-18 | Chặn sau khi đã có hội thoại | A, B có hội thoại 1-1 | A chặn B → B gửi tin vào hội thoại cũ | B không gửi được. **Nghi lỗi:** chỉ `StartChat` kiểm tra chặn, các đường gửi tin không kiểm tra | ⏸ Chờ tính năng | |
+
+**Tính năng Sprint 2 (Khôi, Sang đang làm)**
+
+| ID | Tình huống | Tiền điều kiện | Các bước | Mong đợi | Kết quả | Issue |
+|---|---|---|---|---|---|---|
+| CHAT-19 | Online / Offline thật | A, B là bạn | B đăng nhập → B đóng tab | Chấm xanh của B ở phía A bật/tắt theo. Hiện `HomeController` gán cứng `IsOnline = true` | ⏸ Chờ tính năng | |
+| CHAT-20 | "Đang soạn tin…" | Như CHAT-01 | A gõ phím, không gửi | B thấy "Đang soạn tin…" ở Cột 3, tự tắt khi A ngừng gõ vài giây | ⏸ Chờ tính năng | |
+| CHAT-21 | Badge tin chưa đọc | A đang ở hội thoại khác | B gửi 3 tin cho A | Cột 2 phía A hiện badge "3"; A mở hội thoại thì badge mất; F5 không hiện lại | ⏸ Chờ tính năng | |
+| CHAT-22 | Trả lời tin nhắn | Như CHAT-01 | A chọn "Trả lời" một tin của B → gửi | Tin mới hiện kèm trích dẫn tin gốc ở cả 2 phía; tin gốc bị thu hồi thì trích dẫn hiện "đã thu hồi" | ⏸ Chờ tính năng | |
+| CHAT-23 | Ghim tin nhắn | Như CHAT-01 | A ghim 1 tin → bỏ ghim | Tin ghim hiện trên đầu khung chat ở cả 2 phía; bỏ ghim thì mất | ⏸ Chờ tính năng | |
+| CHAT-24 | Hội thoại mới nhận tin real-time | A, B vừa kết bạn, chưa có hội thoại | A bấm "Nhắn tin" (tạo hội thoại mới) → gửi tin, B **không F5** | B nhận được tin ngay. **Nghi lỗi:** hub chỉ cho vào nhóm `conv:{id}` lúc kết nối, hội thoại tạo sau chưa nhận được | ⏸ Chờ tính năng | |
+
 
 ### 4. Hạ tầng (INF) — Lead, Cặp 5
 
