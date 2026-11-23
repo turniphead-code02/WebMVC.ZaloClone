@@ -52,7 +52,26 @@ Code liên quan: `Controllers/AccountController.cs`, `Services/Account/Accountse
 
 ### 2. Profile & Avatar (PRO) — Tùng
 
-_Đang soạn._
+Code liên quan: `Controllers/ProfileController.cs`, `Services/Account/Accountservice.cs`, `Services/Storage/LocalFileStorageService.cs` (avatar: `.jpg .jpeg .png .webp`, tối đa 5 MB).
+Phần hiện avatar ở 4 cột (commit `ef63864`) mới nằm ở nhánh `tung/avatar-4-cot`, **chưa merge vào `develop`**, nên PRO-08 đang để ⏸.
+
+| ID | Tình huống | Tiền điều kiện | Các bước | Mong đợi | Kết quả | Issue |
+|---|---|---|---|---|---|---|
+| PRO-01 | Xem trang cá nhân | Đã đăng nhập | Vào `/Profile` | Hiện đúng tên, email, SĐT, tiểu sử, avatar | ⬜ Chưa test | |
+| PRO-02 | Sửa thông tin hợp lệ | Đã đăng nhập | Đổi tên hiển thị, SĐT, tiểu sử → Lưu | Báo thành công; tên mới hiện ngay ở thanh trên và Cột 1 mà không cần đăng nhập lại | ⬜ Chưa test | |
+| PRO-03 | Validate sửa thông tin | Đã đăng nhập | Lần lượt: tên trống; tên 1 ký tự; SĐT > 20 ký tự; tiểu sử > 255 ký tự | Báo lỗi đúng trường, dữ liệu cũ giữ nguyên | ⬜ Chưa test | |
+| PRO-04 | SĐT trùng người khác | B đã có SĐT X | A đổi SĐT thành X | Báo SĐT đã được sử dụng | ⬜ Chưa test | |
+| PRO-05 | Đổi avatar hợp lệ | Đã đăng nhập | Tải ảnh `.png` < 5 MB | Ảnh mới hiện ở trang Profile; `/Profile/VerifyAvatarAndAuth` trả `avatarExistsOnDisk: true` | ⬜ Chưa test | |
+| PRO-06 | Avatar sai định dạng | Đã đăng nhập | Tải `.gif`, `.pdf`, `.exe` đổi đuôi | Báo định dạng không hỗ trợ, avatar cũ giữ nguyên | ⬜ Chưa test | |
+| PRO-07 | Avatar quá 5 MB | Đã đăng nhập | Tải ảnh `.jpg` 6 MB | Báo vượt giới hạn, avatar cũ giữ nguyên | ⬜ Chưa test | |
+| PRO-08 | Avatar đồng bộ 4 cột | A, B là bạn, có hội thoại chung và nhóm chung | 1. A đổi avatar 2. A quay lại màn hình chat 3. B tải lại trang | Ảnh mới hiện ở Cột 1, danh sách hội thoại Cột 2, bong bóng chat Cột 3, danh sách thành viên Cột 4 (cả phía A và B) | ⏸ Chờ tính năng | |
+| PRO-09 | Người chưa có avatar | Tài khoản mới đăng ký | Mở màn hình chat | Hiện chữ cái đầu của tên, không hiện ảnh vỡ | ⬜ Chưa test | |
+| PRO-10 | Đổi mật khẩu hợp lệ | Đã đăng nhập | `/Profile/ChangePassword` → nhập đúng mật khẩu hiện tại + mật khẩu mới ≥ 6 ký tự | Báo thành công, **vẫn đăng nhập** ở trình duyệt hiện tại; lần sau chỉ đăng nhập được bằng mật khẩu mới | ⬜ Chưa test | |
+| PRO-11 | Đổi mật khẩu sai mật khẩu hiện tại | Đã đăng nhập | Nhập sai mật khẩu hiện tại | Báo lỗi ở ô mật khẩu hiện tại, mật khẩu không đổi | ⬜ Chưa test | |
+| PRO-12 | Validate đổi mật khẩu | Đã đăng nhập | Mật khẩu mới 5 ký tự; xác nhận không khớp | Báo lỗi đúng trường | ⬜ Chưa test | |
+| PRO-13 | SecurityStamp: đăng xuất trình duyệt khác | A đăng nhập ở Chrome và Edge | Đổi mật khẩu ở Chrome → sang Edge bấm vào trang bất kỳ hoặc F5 | Edge bị đẩy về trang Đăng nhập; Chrome vẫn dùng bình thường | ⬜ Chưa test | |
+| PRO-14 | SecurityStamp với kết nối real-time | Như PRO-13, Edge đang mở khung chat | Đổi mật khẩu ở Chrome → **không F5 Edge**, nhắn tin cho A từ tài khoản khác | Edge không còn nhận tin real-time (kết nối SignalR cũ bị ngắt). Ghi lại kết quả thực tế | ⬜ Chưa test | |
+
 
 ### 3. Chat 1-1 (CHAT) — Khôi, Sang
 
