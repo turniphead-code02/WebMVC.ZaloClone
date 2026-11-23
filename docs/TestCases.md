@@ -33,21 +33,21 @@ Code liên quan: `Controllers/AccountController.cs`, `Services/Account/Accountse
 | ACC-04 | Validate form đăng ký | — | Lần lượt: bỏ trống email; email sai định dạng; tên 1 ký tự; mật khẩu 5 ký tự; xác nhận không khớp | Mỗi trường báo đúng thông báo tiếng Việt, không gửi form | ⬜ Chưa test | |
 | ACC-05 | Đăng nhập bằng email | Có tài khoản | Đăng nhập `user1@zalo.local` / `Test@123` | Vào màn hình chat | ✅ Pass | |
 | ACC-06 | Đăng nhập bằng SĐT | Tài khoản có SĐT | Đăng nhập bằng SĐT (thử cả dạng `09…` và `+849…`) | Đăng nhập thành công cả hai dạng | ⬜ Chưa test | |
-| ACC-07 | Sai mật khẩu / tài khoản không tồn tại | — | Đăng nhập sai mật khẩu; rồi email không tồn tại | Cùng một thông báo "Tài khoản hoặc mật khẩu không chính xác." | ⬜ Chưa test | |
+| ACC-07 | Sai mật khẩu / tài khoản không tồn tại | — | Đăng nhập sai mật khẩu; rồi email không tồn tại | Cùng một thông báo "Tài khoản hoặc mật khẩu không chính xác." | ✅ Pass |  |
 | ACC-08 | Tài khoản bị khóa đăng nhập | Admin đã khóa B | B đăng nhập đúng mật khẩu | Báo "Tài khoản của bạn đã bị khóa…", không vào được | ⬜ Chưa test | |
 | ACC-09 | Tài khoản bị khóa / xóa mềm khi đang online | B đang mở trang chat | Admin khóa (hoặc xóa mềm) B → B tải lại trang hoặc gửi tin | B bị đẩy về trang Đăng nhập | ⬜ Chưa test | |
 | ACC-10 | Ghi nhớ đăng nhập | — | Đăng nhập có tick "Ghi nhớ" → đóng hẳn trình duyệt → mở lại | Vẫn đăng nhập. Không tick thì phải đăng nhập lại | ⬜ Chưa test | |
-| ACC-11 | ReturnUrl an toàn | Chưa đăng nhập | Mở `/Account/Login?ReturnUrl=https://google.com` rồi đăng nhập | Về `/`, không chuyển ra trang ngoài | ⬜ Chưa test | |
+| ACC-11 | ReturnUrl an toàn | Chưa đăng nhập | Mở `/Account/Login?ReturnUrl=https://google.com` rồi đăng nhập | Về `/`, không chuyển ra trang ngoài | ✅ Pass |  |
 | ACC-12 | Đăng xuất | Đã đăng nhập | Bấm Đăng xuất → bấm Back của trình duyệt → F5 | Về trang Đăng nhập, hiện "Bạn đã đăng xuất thành công.", không xem lại được trang chat | ⬜ Chưa test | |
-| ACC-13 | Trang yêu cầu đăng nhập | Chưa đăng nhập | Mở trực tiếp `/`, `/Profile`, `/Admin/Admin` | Chuyển về `/Account/Login?ReturnUrl=…` | ⬜ Chưa test | |
-| ACC-14 | User thường vào trang Admin | Đăng nhập user thường | Mở `/Admin/Admin` | Trang "Từ chối truy cập" (`/Account/AccessDenied`) | ⬜ Chưa test | |
+| ACC-13 | Trang yêu cầu đăng nhập | Chưa đăng nhập | Mở trực tiếp `/`, `/Profile`, `/Admin/Admin` | Chuyển về `/Account/Login?ReturnUrl=…` | ✅ Pass |  |
+| ACC-14 | User thường vào trang Admin | Đăng nhập user thường | Mở `/Admin/Admin` | Trang "Từ chối truy cập" (`/Account/AccessDenied`) | ✅ Pass |  |
 | ACC-15 | Quên mật khẩu → nhận OTP | — | `/Account/ForgotPassword` → nhập email đã đăng ký | Chuyển sang trang Đặt lại mật khẩu, hiện thông báo kèm OTP 6 số (chế độ test đồ án) | ⬜ Chưa test | |
 | ACC-16 | Quên mật khẩu với tài khoản không tồn tại | — | Nhập email chưa đăng ký | Báo "Không tìm thấy tài khoản…" | ⬜ Chưa test | |
-| ACC-17 | Đặt lại mật khẩu bằng OTP đúng | Đã làm ACC-15 | Nhập OTP đúng + mật khẩu mới hợp lệ | Về trang Đăng nhập; mật khẩu cũ không còn dùng được, mật khẩu mới đăng nhập được | ⬜ Chưa test | |
+| ACC-17 | Đặt lại mật khẩu bằng OTP đúng | Đã làm ACC-15 | Nhập OTP đúng + mật khẩu mới hợp lệ | Về trang Đăng nhập; mật khẩu cũ không còn dùng được, mật khẩu mới đăng nhập được | ✅ Pass |  |
 | ACC-18 | OTP sai / hết hạn / dùng lại | Đã làm ACC-15 | a) Nhập sai OTP b) Chờ > 10 phút c) Dùng lại OTP vừa dùng thành công | Cả 3 trường hợp báo "Mã OTP không chính xác hoặc đã hết hạn." | ⬜ Chưa test | |
-| ACC-19 | Giới hạn số lần nhập sai OTP | Đã làm ACC-15 | Nhập sai OTP liên tục 10 lần | Bị chặn hoặc OTP bị hủy sau vài lần sai. **Code hiện không giới hạn**, có thể dò hết 900.000 mã trong 10 phút | ⬜ Chưa test | |
+| ACC-19 | Giới hạn số lần nhập sai OTP | Đã làm ACC-15 | Nhập sai OTP liên tục 10 lần | Bị chặn hoặc OTP bị hủy sau vài lần sai. **Code hiện không giới hạn**, có thể dò hết 900.000 mã trong 10 phút | ❌ Fail | #3 |
 | ACC-20 | Đặt lại mật khẩu đăng xuất phiên cũ | A đang đăng nhập ở trình duyệt 1 | Ở trình duyệt 2 làm Quên mật khẩu → đặt lại mật khẩu → quay lại trình duyệt 1, F5 | Trình duyệt 1 bị đăng xuất (SecurityStamp đổi) | ⬜ Chưa test | |
-| ACC-21 | QuickLogin chỉ dùng khi phát triển | Chưa đăng nhập | Mở `/Account/Login`, bấm vào một tài khoản mẫu (hoặc mở `/Account/QuickLogin?userId=00000000-0000-0000-0000-000000000001`) | Chỉ hoạt động ở môi trường Development; bản demo/nộp bài không có. **Hiện tại** trang Login luôn hiện danh sách tài khoản mẫu và vào thẳng được, kể cả Admin, không cần mật khẩu, ở mọi môi trường | ❌ Fail | |
+| ACC-21 | QuickLogin chỉ dùng khi phát triển | Chưa đăng nhập | Mở `/Account/Login`, bấm vào một tài khoản mẫu (hoặc mở `/Account/QuickLogin?userId=00000000-0000-0000-0000-000000000001`) | Chỉ hoạt động ở môi trường Development; bản demo/nộp bài không có. **Hiện tại** trang Login luôn hiện danh sách tài khoản mẫu và vào thẳng được, kể cả Admin, không cần mật khẩu, ở mọi môi trường | ❌ Fail | #2 |
 
 
 ### 2. Profile & Avatar (PRO) — Tùng
@@ -86,23 +86,23 @@ Giao diện gửi tin qua hub `SendMessage`; khi mất kết nối thì gọi `P
 | CHAT-02 | Tin rỗng / chỉ khoảng trắng | Như CHAT-01 | Bấm gửi khi ô trống hoặc chỉ có dấu cách | Không gửi gì | ⬜ Chưa test | |
 | CHAT-03 | Emoji và ký tự đặc biệt | Như CHAT-01 | Gửi emoji, tiếng Việt có dấu, `<b>test</b>`, `<script>alert(1)</script>` | Hiện đúng nguyên văn, không thực thi HTML/JS (cả lúc nhận real-time và sau F5) | ⬜ Chưa test | |
 | CHAT-04 | Tin nhắn rất dài | Như CHAT-01 | Dán đoạn văn 10.000 ký tự rồi gửi | Bị chặn hoặc giới hạn độ dài hợp lý. **Code hiện không giới hạn độ dài** | ⬜ Chưa test | |
-| CHAT-05 | Hội thoại hơn 50 tin | Hội thoại có > 50 tin | Gửi thêm tin mới → F5 / chuyển sang hội thoại khác rồi quay lại | Hiện các tin **mới nhất**. `GetConversationData` đang `OrderBy(CreatedAt).Take(50)` nên nghi chỉ lấy 50 tin **cũ nhất** | ⬜ Chưa test | |
+| CHAT-05 | Hội thoại hơn 50 tin | Hội thoại có > 50 tin | Gửi thêm tin mới → F5 / chuyển sang hội thoại khác rồi quay lại | Hiện các tin **mới nhất**. `GetConversationData` đang `OrderBy(CreatedAt).Take(50)` nên nghi chỉ lấy 50 tin **cũ nhất** | ❌ Fail | #6 |
 | CHAT-06 | Gửi ảnh | Như CHAT-01 | Gửi `.jpg`/`.png`/`.gif`/`.webp` < 10 MB | Cả hai bên thấy ảnh ngay; F5 vẫn hiện ảnh | ⬜ Chưa test | |
 | CHAT-07 | Gửi file | Như CHAT-01 | Gửi `.pdf`, `.docx`, `.xlsx`, `.zip`, `.txt` | Hiện tên + dung lượng; bấm tải về được | ⬜ Chưa test | |
 | CHAT-08 | Link file sau khi F5 | Đã làm CHAT-06/07 | F5 → bấm ảnh/file trong khung chat và ở panel tệp đã gửi (Cột 4) | Mở/tải được. **Nghi lỗi:** `chat.js:178` và `:445` ghép `/uploads/${storageKey}` mà `storageKey` đã bắt đầu bằng `uploads/` → link `/uploads/uploads/…` bị 404 | ⬜ Chưa test | |
 | CHAT-09 | Sai định dạng file | Như CHAT-01 | Gửi `.exe`, `.bat`, `.mp4` | Báo định dạng không hỗ trợ, không tạo tin | ⬜ Chưa test | |
 | CHAT-10 | Vượt dung lượng | Như CHAT-01 | Gửi ảnh 11 MB; file 35 MB; file 51 MB | Báo vượt giới hạn bằng thông báo tiếng Việt. **Nghi lỗi:** không cấu hình `RequestSizeLimit`, Kestrel mặc định chặn ~28,6 MB nên file 30–50 MB có thể báo lỗi 413 dù quy định cho phép 50 MB | ⬜ Chưa test | |
 | CHAT-11 | Thu hồi tin của mình | Như CHAT-01 | A thu hồi tin vừa gửi | Cả hai bên thấy "Tin nhắn đã được thu hồi" ngay | ⬜ Chưa test | |
-| CHAT-12 | Tin đã thu hồi sau khi F5 | Đã làm CHAT-11 | Cả A và B F5, chuyển hội thoại rồi quay lại, xem dòng xem trước ở Cột 2 | Vẫn hiện "đã thu hồi". **Nghi lỗi:** `HomeController` (Index, `GetConversationData`, xem trước Cột 2) không kiểm tra `IsRecalled` nên nội dung gốc hiện lại | ⬜ Chưa test | |
-| CHAT-13 | Không thu hồi được tin người khác | Như CHAT-01 | B gọi thu hồi tin của A (qua DevTools: `POST /Chat/RecallMessage` với `messageId` của A) | Bị từ chối | ⬜ Chưa test | |
+| CHAT-12 | Tin đã thu hồi sau khi F5 | Đã làm CHAT-11 | Cả A và B F5, chuyển hội thoại rồi quay lại, xem dòng xem trước ở Cột 2 | Vẫn hiện "đã thu hồi". **Nghi lỗi:** `HomeController` (Index, `GetConversationData`, xem trước Cột 2) không kiểm tra `IsRecalled` nên nội dung gốc hiện lại | ❌ Fail | #5 |
+| CHAT-13 | Không thu hồi được tin người khác | Như CHAT-01 | B gọi thu hồi tin của A (qua DevTools: `POST /Chat/RecallMessage` với `messageId` của A) | Bị từ chối | ✅ Pass |  |
 | CHAT-14 | Thu hồi tin có file | Đã gửi file | Thu hồi tin chứa file → mở lại link file cũ | Link file không còn tải được. Code hiện giữ nguyên file trên ổ đĩa; ghi lại kết quả | ⬜ Chưa test | |
 
 **Bảo mật**
 
 | ID | Tình huống | Tiền điều kiện | Các bước | Mong đợi | Kết quả | Issue |
 |---|---|---|---|---|---|---|
-| CHAT-15 | Xem hội thoại không phải của mình | C không thuộc hội thoại A–B, biết `conversationId` | C đăng nhập, mở `/Home/GetConversationData?conversationId=<id A–B>` và `/?conversationId=<id A–B>` | Bị từ chối (403/404). **Nghi lỗi:** `GetConversationData` không kiểm tra thành viên nên trả về toàn bộ tin nhắn | ⬜ Chưa test | |
-| CHAT-16 | Gửi tin vào hội thoại không phải của mình | Như CHAT-15 | C gọi `POST /Chat/SendMessage` với `conversationId` của A–B | Bị từ chối, A và B không nhận được gì | ⬜ Chưa test | |
+| CHAT-15 | Xem hội thoại không phải của mình | C không thuộc hội thoại A–B, biết `conversationId` | C đăng nhập, mở `/Home/GetConversationData?conversationId=<id A–B>` và `/?conversationId=<id A–B>` | Bị từ chối (403/404). **Nghi lỗi:** `GetConversationData` không kiểm tra thành viên nên trả về toàn bộ tin nhắn | ❌ Fail | #4 |
+| CHAT-16 | Gửi tin vào hội thoại không phải của mình | Như CHAT-15 | C gọi `POST /Chat/SendMessage` với `conversationId` của A–B | Bị từ chối, A và B không nhận được gì | ✅ Pass |  |
 | CHAT-17 | File chat truy cập công khai | Đã gửi file | Copy link file → mở bằng tab ẩn danh (chưa đăng nhập) | Ghi lại kết quả. File đang nằm trong `wwwroot/uploads` nên ai có link cũng tải được | ⬜ Chưa test | |
 | CHAT-18 | Chặn sau khi đã có hội thoại | A, B có hội thoại 1-1 | A chặn B → B gửi tin vào hội thoại cũ | B không gửi được. **Nghi lỗi:** chỉ `StartChat` kiểm tra chặn, các đường gửi tin không kiểm tra | ⏸ Chờ tính năng | |
 
