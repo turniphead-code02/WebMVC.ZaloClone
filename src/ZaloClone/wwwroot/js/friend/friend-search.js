@@ -71,7 +71,10 @@
                 action = '<span class="friend-status-tag">Người này đã gửi lời mời cho bạn</span>';
                 break;
             case 'Friend':
-                action = '<span class="friend-status-tag">Đã là bạn bè</span>';
+                action = '<div class="friend-result-actions">' +
+                    '<span class="friend-status-tag">Đã là bạn bè</span>' +
+                    '<button type="button" class="btn btn-primary btn-sm" data-start-chat="' + esc(u.userId) + '">Nhắn tin</button>' +
+                    '</div>';
                 break;
             case 'Blocked':
                 action = '<span class="friend-status-tag">Bạn đã chặn người này</span>';

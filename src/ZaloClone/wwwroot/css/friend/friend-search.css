@@ -98,3 +98,9 @@
     color: #6c757d;
     font-size: .9rem;
 }
+
+.friend-result-actions {
+    display: flex;
+    align-items: center;
+    gap: .75rem;
+}

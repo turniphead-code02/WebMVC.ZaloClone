@@ -7,11 +7,21 @@ using ZaloClone.Models.ViewModels.Chat;
 
 namespace ZaloClone.Services.Chat;
 
+public class ChatMessageDetailDto : MessageDto
+{
+    public Guid? ReplyToId { get; set; }
+    public string? ReplyToSenderName { get; set; }
+    public string? ReplyToContent { get; set; }
+    public bool IsPinned { get; set; }
+}
+
 public interface IChatService
 {
     Task<ApiResponse<List<MessageDto>>> GetMessagesAsync(Guid conversationId, Guid userId, int skip = 0, int take = 50);
-    Task<ApiResponse<MessageDto>> SendTextMessageAsync(Guid conversationId, Guid senderId, string content);
-    Task<ApiResponse<MessageDto>> SendFileAttachmentAsync(Guid conversationId, Guid senderId, IFormFile file);
+    Task<ApiResponse<List<ChatMessageDetailDto>>> GetMessagesWithMetaAsync(Guid conversationId, Guid userId, int skip = 0, int take = 50);
+    Task<ApiResponse<MessageDto>> SendTextMessageAsync(Guid conversationId, Guid senderId, string content, Guid? replyToId = null);
+    Task<ApiResponse<MessageDto>> SendFileAttachmentAsync(Guid conversationId, Guid senderId, IFormFile file, Guid? replyToId = null);
     Task<ApiResponse> RecallMessageAsync(Guid messageId, Guid userId);
+    Task<ApiResponse<ChatMessageDetailDto>> TogglePinMessageAsync(Guid messageId, Guid userId);
     Task<ApiResponse<List<AttachmentDto>>> GetAttachmentsAsync(Guid conversationId, Guid userId);
 }

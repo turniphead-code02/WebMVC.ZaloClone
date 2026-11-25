@@ -8,9 +8,186 @@ document.addEventListener("DOMContentLoaded", function () {
     const currentUserId = document.body.dataset.userId;
     let activeConvId = document.body.dataset.activeConvId;
 
+    // Trạng thái Trả lời & Ghim tin nhắn
+    let replyingTo = null; // { id, senderName, content }
+    let currentPinnedMessageId = null;
+
     // Tự động cuộn xuống tin nhắn cuối cùng khi mở trang
     if (chatStream) {
         chatStream.scrollTop = chatStream.scrollHeight;
+    }
+
+    // 0. KHỞI TẠO GIAO DIỆN EMOJI, THANH GHIM & KHUNG TRẢ LỜI
+    initEmojiPicker();
+    const pinnedBanner = initPinnedBanner();
+    const replyPreviewBar = initReplyPreviewBar();
+
+    function initEmojiPicker() {
+        const inputBar = document.querySelector(".chat-input-bar");
+        if (!inputBar || !inputMessage) return;
+
+        inputBar.style.position = "relative";
+
+        const btnEmoji = document.createElement("button");
+        btnEmoji.type = "button";
+        btnEmoji.className = "btn-attach";
+        btnEmoji.title = "Chèn biểu tượng cảm xúc";
+        btnEmoji.innerHTML = `<i class="bi bi-emoji-smile"></i>`;
+
+        const emojiPopup = document.createElement("div");
+        emojiPopup.className = "shadow rounded-3 bg-white border p-2 d-none";
+        emojiPopup.style.cssText = "position: absolute; bottom: 64px; left: 16px; z-index: 1050; width: 260px; display: grid; grid-template-columns: repeat(7, 1fr); gap: 4px;";
+
+        const emojis = [
+            "😀", "😂", "🤣", "😊", "🥰", "😍", "😘",
+            "😎", "🤔", "😢", "😭", "😡", "😱", "😴",
+            "👍", "👎", "👏", "🙏", "❤️", "💔", "🔥",
+            "🎉", "✨", "💯", "🌹", "☕", "🍻", "👋"
+        ];
+
+        emojis.forEach(em => {
+            const span = document.createElement("button");
+            span.type = "button";
+            span.className = "btn btn-sm btn-light p-1 fs-5 border-0";
+            span.textContent = em;
+            span.addEventListener("click", function () {
+                inputMessage.value += em;
+                inputMessage.focus();
+            });
+            emojiPopup.appendChild(span);
+        });
+
+        btnEmoji.addEventListener("click", function (e) {
+            e.stopPropagation();
+            emojiPopup.classList.toggle("d-none");
+        });
+
+        document.addEventListener("click", function (e) {
+            if (!emojiPopup.contains(e.target) && e.target !== btnEmoji) {
+                emojiPopup.classList.add("d-none");
+            }
+        });
+
+        inputBar.insertBefore(btnEmoji, inputMessage);
+        inputBar.appendChild(emojiPopup);
+    }
+
+    function initPinnedBanner() {
+        const chatHeader = document.querySelector(".main-chat-panel .chat-header");
+        if (!chatHeader) return null;
+
+        const banner = document.createElement("div");
+        banner.id = "pinnedMessageBanner";
+        banner.className = "d-none align-items-center justify-content-between px-3 py-2 bg-light border-bottom";
+        banner.style.cssText = "font-size: 13px; cursor: pointer;";
+        banner.innerHTML = `
+            <div class="d-flex align-items-center gap-2 text-truncate me-2" id="pinnedBannerJump" title="Bấm để đi tới tin nhắn đã ghim">
+                <i class="bi bi-pin-angle-fill text-primary fs-6"></i>
+                <div class="text-truncate">
+                    <span class="fw-semibold text-primary me-1" id="pinnedBannerSender"></span>
+                    <span class="text-muted" id="pinnedBannerContent"></span>
+                </div>
+            </div>
+            <button type="button" class="btn btn-sm btn-outline-secondary py-0 px-2" id="btnUnpinBanner" title="Bỏ ghim tin nhắn">
+                Bỏ ghim
+            </button>
+        `;
+
+        chatHeader.insertAdjacentElement("afterend", banner);
+
+        banner.querySelector("#pinnedBannerJump").addEventListener("click", () => {
+            if (currentPinnedMessageId) {
+                scrollToMessage(currentPinnedMessageId);
+            }
+        });
+
+        banner.querySelector("#btnUnpinBanner").addEventListener("click", (e) => {
+            e.stopPropagation();
+            if (currentPinnedMessageId) {
+                togglePinMessage(currentPinnedMessageId);
+            }
+        });
+
+        return banner;
+    }
+
+    function updatePinnedBanner(pinData) {
+        if (!pinnedBanner) return;
+
+        if (!pinData || !pinData.messageId) {
+            currentPinnedMessageId = null;
+            pinnedBanner.classList.add("d-none");
+            pinnedBanner.classList.remove("d-flex");
+            return;
+        }
+
+        currentPinnedMessageId = pinData.messageId;
+        pinnedBanner.querySelector("#pinnedBannerSender").textContent = `${pinData.senderName || "Tin nhắn"}:`;
+        pinnedBanner.querySelector("#pinnedBannerContent").textContent = pinData.content || "";
+        pinnedBanner.classList.remove("d-none");
+        pinnedBanner.classList.add("d-flex");
+    }
+
+    function initReplyPreviewBar() {
+        const inputBar = document.querySelector(".main-chat-panel .chat-input-bar");
+        if (!inputBar) return null;
+
+        const bar = document.createElement("div");
+        bar.id = "replyPreviewBar";
+        bar.className = "d-none align-items-center justify-content-between px-3 py-2 bg-light border-top";
+        bar.style.cssText = "font-size: 13px;";
+        bar.innerHTML = `
+            <div class="d-flex align-items-center gap-2 text-truncate me-2" style="border-left: 3px solid #0d6efd; padding-left: 8px;">
+                <div class="text-truncate">
+                    <div class="fw-semibold text-primary" id="replyPreviewSender" style="font-size: 12px;"></div>
+                    <div class="text-muted text-truncate" id="replyPreviewContent" style="max-width: 480px;"></div>
+                </div>
+            </div>
+            <button type="button" class="btn-close btn-sm" id="btnCancelReply" aria-label="Hủy trả lời"></button>
+        `;
+
+        inputBar.insertAdjacentElement("beforebegin", bar);
+
+        bar.querySelector("#btnCancelReply").addEventListener("click", clearReplyState);
+        return bar;
+    }
+
+    function setReplyState(msg) {
+        replyingTo = {
+            id: msg.id,
+            senderName: msg.senderName,
+            content: msg.content
+        };
+        if (replyPreviewBar) {
+            replyPreviewBar.querySelector("#replyPreviewSender").textContent = `Đang trả lời ${msg.senderName}`;
+            replyPreviewBar.querySelector("#replyPreviewContent").textContent = msg.content;
+            replyPreviewBar.classList.remove("d-none");
+            replyPreviewBar.classList.add("d-flex");
+        }
+        if (inputMessage) inputMessage.focus();
+    }
+
+    function clearReplyState() {
+        replyingTo = null;
+        if (replyPreviewBar) {
+            replyPreviewBar.classList.add("d-none");
+            replyPreviewBar.classList.remove("d-flex");
+        }
+    }
+
+    function scrollToMessage(messageId) {
+        const target = document.querySelector(`.msg-row[data-message-id="${messageId}"]`);
+        if (!target) return;
+
+        target.scrollIntoView({ behavior: "smooth", block: "center" });
+        const bubble = target.querySelector(".msg-bubble");
+        if (bubble) {
+            bubble.style.transition = "box-shadow 0.3s ease";
+            bubble.style.boxShadow = "0 0 0 3px rgba(13, 110, 253, 0.55)";
+            setTimeout(() => {
+                bubble.style.boxShadow = "";
+            }, 1500);
+        }
     }
 
     // 1. KHỞI TẠO KẾT NỐI SIGNALR WEBSOCKET
@@ -21,40 +198,36 @@ document.addEventListener("DOMContentLoaded", function () {
 
     // Nhận tin nhắn mới tức thời từ Server
     connection.on("ReceiveMessage", function (msg) {
-        console.log("Tin nhắn mới nhận:", msg);
-
-        // A. Cập nhật vào dòng tin nhắn nếu đang mở đúng cuộc trò chuyện này
         if (msg.conversationId === activeConvId && chatStream) {
+            const emptyHint = chatStream.querySelector(".text-center.text-muted");
+            if (emptyHint) emptyHint.remove();
+
             const isSelf = msg.senderId === currentUserId;
-            const initials = msg.senderName ? msg.senderName.split(' ').map(n => n[0]).slice(-2).join('') : 'U';
+            const row = buildMessageRow({
+                id: msg.id,
+                senderName: msg.senderName,
+                content: msg.content,
+                messageType: msg.messageType,
+                fileUrl: msg.fileUrl,
+                fileName: msg.fileName,
+                formattedTime: msg.createdAt || "Vừa xong",
+                isSelf: isSelf,
+                isRecalled: false,
+                replyToId: msg.replyToId || null,
+                replyToSenderName: msg.replyToSenderName || null,
+                replyToContent: msg.replyToContent || null,
+                isPinned: !!msg.isPinned
+            });
 
-            let bubbleContent = escapeHtml(msg.content);
-            if (msg.messageType === 'Image' && msg.fileUrl) {
-                bubbleContent = `<a href="${escapeHtml(msg.fileUrl)}" target="_blank"><img src="${escapeHtml(msg.fileUrl)}" alt="Ảnh" class="img-fluid rounded-3 mb-1" style="max-height: 200px;" /></a><br /><small>${escapeHtml(msg.fileName || '')}</small>`;
-            } else if (msg.messageType === 'File' && msg.fileUrl) {
-                bubbleContent = `<div class="d-flex align-items-center gap-2"><i class="bi bi-file-earmark-arrow-down fs-4"></i><div><a href="${escapeHtml(msg.fileUrl)}" download class="text-decoration-none fw-semibold ${isSelf ? 'text-white' : 'text-primary'}">${escapeHtml(msg.fileName || 'Tệp đính kèm')}</a></div></div>`;
-            }
-
-            const row = document.createElement("div");
-            row.className = `msg-row ${isSelf ? 'outgoing' : 'incoming'}`;
-            row.innerHTML = `
-                <div class="msg-avatar" title="${escapeHtml(msg.senderName)}">${initials}</div>
-                <div class="msg-bubble-wrap">
-                    ${!isSelf ? `<div class="msg-sender-name">${escapeHtml(msg.senderName)}</div>` : ''}
-                    <div class="msg-bubble">${bubbleContent}</div>
-                    <div class="msg-time">${msg.createdAt || 'Vừa xong'}</div>
-                </div>
-            `;
             chatStream.appendChild(row);
             chatStream.scrollTop = chatStream.scrollHeight;
 
-            // Nếu là file, tự động cập nhật danh sách Files ở Cột 4
             if (msg.fileUrl) {
                 refreshAttachments(activeConvId);
             }
         }
 
-        // B. Cập nhật preview tin nhắn ở Cột 2 (Danh sách hội thoại)
+        // Cập nhật preview tin nhắn ở Cột 2
         const convElement = document.querySelector(`.conv-item[data-id="${msg.conversationId}"]`);
         if (convElement) {
             const previewEl = convElement.querySelector(".conv-preview");
@@ -73,33 +246,292 @@ document.addEventListener("DOMContentLoaded", function () {
         }
     });
 
-    // Bắt đầu kết nối
-    connection.start()
-        .then(() => console.log(" SignalR ChatHub đã kết nối thành công!"))
-        .catch(err => console.error(" Lỗi kết nối SignalR:", err));
+    // Nhận sự kiện Thu hồi tin nhắn real-time từ Server
+    connection.on("MessageRecalled", function (data) {
+        const row = document.querySelector(`.msg-row[data-message-id="${data.messageId}"]`);
+        if (row) {
+            const bubble = row.querySelector(".msg-bubble");
+            if (bubble) {
+                bubble.innerHTML = `<em class="opacity-75">Tin nhắn đã được thu hồi</em>`;
+            }
+            row.querySelectorAll(".btn-recall-msg, .btn-reply-msg, .btn-pin-msg, .pin-badge").forEach(el => el.remove());
+        }
+        if (currentPinnedMessageId === data.messageId) {
+            updatePinnedBanner(null);
+        }
+    });
 
-    // 2. GỬI TIN NHẮN VĂN BẢN
+    // Nhận sự kiện Ghim / Bỏ ghim tin nhắn real-time từ Server
+    connection.on("MessagePinned", function (data) {
+        if (data.conversationId !== activeConvId) return;
+
+        document.querySelectorAll(".msg-row").forEach(row => {
+            const pinBtn = row.querySelector(".btn-pin-msg");
+            const badge = row.querySelector(".pin-badge");
+            if (badge) badge.remove();
+            if (pinBtn) pinBtn.textContent = "Ghim";
+        });
+
+        if (data.isPinned) {
+            updatePinnedBanner({
+                messageId: data.messageId,
+                senderName: data.senderName,
+                content: data.content
+            });
+
+            const targetRow = document.querySelector(`.msg-row[data-message-id="${data.messageId}"]`);
+            if (targetRow) {
+                const pinBtn = targetRow.querySelector(".btn-pin-msg");
+                if (pinBtn) pinBtn.textContent = "Bỏ ghim";
+                const timeRow = targetRow.querySelector(".msg-time");
+                if (timeRow && !timeRow.querySelector(".pin-badge")) {
+                    const badge = document.createElement("i");
+                    badge.className = "bi bi-pin-angle-fill text-warning me-1 pin-badge";
+                    badge.title = "Đang ghim";
+                    timeRow.prepend(badge);
+                }
+            }
+        } else {
+            updatePinnedBanner(null);
+        }
+    });
+
+    connection.start()
+        .then(() => console.log("SignalR ChatHub đã kết nối thành công!"))
+        .catch(err => console.error("Lỗi kết nối SignalR:", err));
+
+    // Đồng bộ lại danh sách tin nhắn (ID, ảnh/file, reply, pin, nút thu hồi) khi vừa tải trang (F5)
+    if (activeConvId && chatStream) {
+        syncCurrentConversationMessages(activeConvId);
+    }
+
+    async function syncCurrentConversationMessages(convId) {
+        try {
+            const [msgRes, attRes] = await Promise.all([
+                fetch(`/Chat/Messages?conversationId=${convId}`),
+                fetch(`/Chat/Attachments?conversationId=${convId}`)
+            ]);
+            const msgData = await msgRes.json();
+            const attData = await attRes.json();
+
+            if (msgData.success && Array.isArray(msgData.data)) {
+                const attachments = attData.success ? (attData.data || []) : [];
+                renderMessagesList(msgData.data, attachments);
+            }
+        } catch (err) {
+            console.error("Lỗi đồng bộ tin nhắn:", err);
+        }
+    }
+
+    function renderMessagesList(messages, attachments) {
+        if (!chatStream) return;
+        chatStream.innerHTML = "";
+
+        if (!messages || messages.length === 0) {
+            updatePinnedBanner(null);
+            chatStream.innerHTML = `<div class="text-center text-muted py-5">Chưa có tin nhắn nào. Hãy gửi lời chào nhé! 👋</div>`;
+            return;
+        }
+
+        let pinnedMsg = null;
+
+        messages.forEach(msg => {
+            let fileUrl = null;
+            let fileName = null;
+
+            if (msg.messageType === "Image" || msg.messageType === "File") {
+                fileName = msg.content.replace(/^\[(Ảnh|Tệp)\]\s*/, "");
+                const matched = attachments.find(a => a.fileName === fileName);
+                if (matched) {
+                    fileUrl = `/uploads/${matched.storageKey}`;
+                }
+            }
+
+            const isRecalled = msg.messageType === "Recalled" || msg.content === "Tin nhắn đã được thu hồi";
+            if (msg.isPinned && !isRecalled) {
+                pinnedMsg = {
+                    messageId: msg.id,
+                    senderName: msg.senderName,
+                    content: msg.content
+                };
+            }
+
+            const row = buildMessageRow({
+                id: msg.id,
+                senderName: msg.senderName,
+                content: msg.content,
+                messageType: msg.messageType,
+                fileUrl: fileUrl,
+                fileName: fileName,
+                formattedTime: msg.formattedTime,
+                isSelf: msg.isSelf,
+                isRecalled: isRecalled,
+                replyToId: msg.replyToId || null,
+                replyToSenderName: msg.replyToSenderName || null,
+                replyToContent: msg.replyToContent || null,
+                isPinned: !!msg.isPinned && !isRecalled
+            });
+
+            chatStream.appendChild(row);
+        });
+
+        updatePinnedBanner(pinnedMsg);
+        chatStream.scrollTop = chatStream.scrollHeight;
+    }
+
+    function buildMessageRow(msg) {
+        const initials = msg.senderName ? msg.senderName.split(" ").map(n => n[0]).slice(-2).join("") : "U";
+        let bubbleContent = escapeHtml(msg.content);
+
+        if (msg.isRecalled) {
+            bubbleContent = `<em class="opacity-75">Tin nhắn đã được thu hồi</em>`;
+        } else if (msg.messageType === "Image" && msg.fileUrl) {
+            bubbleContent = `
+                <a href="${escapeHtml(msg.fileUrl)}" target="_blank">
+                    <img src="${escapeHtml(msg.fileUrl)}" alt="Ảnh" class="img-fluid rounded-3 mb-1" style="max-height: 200px;" />
+                </a>
+                <div class="small opacity-75">${escapeHtml(msg.fileName || "")}</div>`;
+        } else if (msg.messageType === "File" && msg.fileUrl) {
+            bubbleContent = `
+                <div class="d-flex align-items-center gap-2">
+                    <i class="bi bi-file-earmark-arrow-down fs-4"></i>
+                    <a href="${escapeHtml(msg.fileUrl)}" download class="text-decoration-none fw-semibold ${msg.isSelf ? "text-white" : "text-primary"}">
+                        ${escapeHtml(msg.fileName || "Tệp đính kèm")}
+                    </a>
+                </div>`;
+        }
+
+        let replyQuoteHtml = "";
+        if (msg.replyToId && !msg.isRecalled) {
+            const borderColor = msg.isSelf ? "rgba(255,255,255,0.85)" : "#0d6efd";
+            const bgColor = msg.isSelf ? "rgba(255,255,255,0.18)" : "rgba(13,110,253,0.08)";
+            replyQuoteHtml = `
+                <div class="reply-quote-box mb-1 px-2 py-1 rounded-2" data-reply-target="${msg.replyToId}" style="cursor: pointer; font-size: 12px; border-left: 3px solid ${borderColor}; background: ${bgColor};">
+                    <div class="fw-semibold" style="font-size: 11px;">${escapeHtml(msg.replyToSenderName || "Tin nhắn")}</div>
+                    <div class="text-truncate" style="max-width: 240px; opacity: 0.85;">${escapeHtml(msg.replyToContent || "")}</div>
+                </div>`;
+        }
+
+        const pinBadgeHtml = (msg.isPinned && !msg.isRecalled)
+            ? `<i class="bi bi-pin-angle-fill text-warning me-1 pin-badge" title="Đang ghim"></i>`
+            : "";
+
+        const replyBtnHtml = (!msg.isRecalled && msg.id)
+            ? `<button type="button" class="btn btn-link btn-sm text-muted p-0 ms-2 text-decoration-none btn-reply-msg" title="Trả lời tin nhắn" style="font-size: 11px;">Trả lời</button>`
+            : "";
+
+        const pinBtnHtml = (!msg.isRecalled && msg.id)
+            ? `<button type="button" class="btn btn-link btn-sm text-muted p-0 ms-2 text-decoration-none btn-pin-msg" title="Ghim tin nhắn" style="font-size: 11px;">${msg.isPinned ? "Bỏ ghim" : "Ghim"}</button>`
+            : "";
+
+        const recallHtml = (msg.isSelf && !msg.isRecalled && msg.id)
+            ? `<button type="button" class="btn btn-link btn-sm text-muted p-0 ms-2 text-decoration-none btn-recall-msg" data-id="${msg.id}" title="Thu hồi tin nhắn" style="font-size: 11px;">Thu hồi</button>`
+            : "";
+
+        const row = document.createElement("div");
+        row.className = `msg-row ${msg.isSelf ? "outgoing" : "incoming"}`;
+        if (msg.id) row.dataset.messageId = msg.id;
+
+        row.innerHTML = `
+            <div class="msg-avatar" title="${escapeHtml(msg.senderName)}">${initials}</div>
+            <div class="msg-bubble-wrap">
+                ${!msg.isSelf ? `<div class="msg-sender-name">${escapeHtml(msg.senderName)}</div>` : ""}
+                <div class="msg-bubble">${replyQuoteHtml}${bubbleContent}</div>
+                <div class="msg-time d-flex align-items-center ${msg.isSelf ? "justify-content-end" : ""}">
+                    ${pinBadgeHtml}
+                    <span>${msg.formattedTime || "Vừa xong"}</span>
+                    ${replyBtnHtml}
+                    ${pinBtnHtml}
+                    ${recallHtml}
+                </div>
+            </div>
+        `;
+
+        const quoteBox = row.querySelector(".reply-quote-box");
+        if (quoteBox) {
+            quoteBox.addEventListener("click", () => scrollToMessage(msg.replyToId));
+        }
+
+        const btnReply = row.querySelector(".btn-reply-msg");
+        if (btnReply) {
+            btnReply.addEventListener("click", () => setReplyState(msg));
+        }
+
+        const btnPin = row.querySelector(".btn-pin-msg");
+        if (btnPin) {
+            btnPin.addEventListener("click", () => togglePinMessage(msg.id));
+        }
+
+        const btnRecall = row.querySelector(".btn-recall-msg");
+        if (btnRecall) {
+            btnRecall.addEventListener("click", () => recallMessage(msg.id));
+        }
+
+        return row;
+    }
+
+    async function togglePinMessage(messageId) {
+        if (!messageId) return;
+        try {
+            const res = await fetch("/Chat/TogglePinMessage", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ messageId: messageId })
+            });
+            const data = await res.json();
+            if (!data.success) {
+                alert(data.message || "Không thể ghim/bỏ ghim tin nhắn.");
+            }
+        } catch (err) {
+            console.error("Lỗi ghim tin nhắn:", err);
+            alert("Lỗi kết nối khi ghim tin nhắn.");
+        }
+    }
+
+    async function recallMessage(messageId) {
+        if (!messageId) return;
+        if (!confirm("Bạn có chắc chắn muốn thu hồi tin nhắn này?")) return;
+
+        try {
+            const res = await fetch("/Chat/RecallMessage", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ messageId: messageId })
+            });
+            const data = await res.json();
+            if (!data.success) {
+                alert(data.message || "Không thể thu hồi tin nhắn.");
+            }
+        } catch (err) {
+            console.error("Lỗi thu hồi tin nhắn:", err);
+            alert("Lỗi kết nối khi thu hồi tin nhắn.");
+        }
+    }
+
+    // 2. GỬI TIN NHẮN VĂN BẢN (Hỗ trợ kèm ReplyToId)
     async function sendMessage() {
         if (!inputMessage) return;
         const content = inputMessage.value.trim();
         if (!content || !activeConvId) return;
 
+        const replyId = replyingTo ? replyingTo.id : null;
         inputMessage.value = "";
+        clearReplyState();
         inputMessage.focus();
 
         try {
-            if (connection.state === signalR.HubConnectionState.Connected) {
-                await connection.invoke("SendMessage", activeConvId, content);
-            } else {
-                const res = await fetch("/Chat/SendMessage", {
-                    method: "POST",
-                    headers: { "Content-Type": "application/json" },
-                    body: JSON.stringify({ conversationId: activeConvId, content: content })
-                });
-                const data = await res.json();
-                if (!data.success) {
-                    alert(data.message || "Không thể gửi tin nhắn!");
-                }
+            const res = await fetch("/Chat/SendMessage", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({
+                    conversationId: activeConvId,
+                    content: content,
+                    replyToId: replyId
+                })
+            });
+            const data = await res.json();
+            if (!data.success) {
+                alert(data.message || "Không thể gửi tin nhắn!");
             }
         } catch (err) {
             console.error("Lỗi khi gửi tin nhắn:", err);
@@ -119,16 +551,42 @@ document.addEventListener("DOMContentLoaded", function () {
         });
     }
 
-    // 3. GỬI TỆP ĐÍNH KÈM / ẢNH
+    // 3. GỬI TỆP ĐÍNH KÈM / ẢNH (Kiểm tra giới hạn 10MB Ảnh / 50MB File + hỗ trợ ReplyToId)
     if (btnAttach && fileAttachmentInput) {
+        fileAttachmentInput.setAttribute("accept", ".jpg,.jpeg,.png,.webp,.gif,.pdf,.docx,.xlsx,.pptx,.zip,.txt");
         btnAttach.addEventListener("click", () => fileAttachmentInput.click());
 
         fileAttachmentInput.addEventListener("change", async function () {
             if (!this.files || this.files.length === 0 || !activeConvId) return;
             const file = this.files[0];
+
+            const ext = file.name.substring(file.name.lastIndexOf(".")).toLowerCase();
+            const imageExts = [".jpg", ".jpeg", ".png", ".webp", ".gif"];
+            const fileExts = [".pdf", ".docx", ".xlsx", ".pptx", ".zip", ".txt"];
+            const isImage = imageExts.includes(ext);
+            const isDoc = fileExts.includes(ext);
+
+            if (!isImage && !isDoc) {
+                alert("Định dạng không hỗ trợ! Chỉ chấp nhận ảnh (.jpg, .png, .webp) hoặc file (.pdf, .docx, .xlsx, .pptx, .zip, .txt).");
+                this.value = "";
+                return;
+            }
+
+            const maxBytes = isImage ? 10 * 1024 * 1024 : 50 * 1024 * 1024;
+            if (file.size > maxBytes) {
+                alert(isImage ? "Ảnh vượt quá giới hạn 10 MB!" : "File đính kèm vượt quá giới hạn 50 MB!");
+                this.value = "";
+                return;
+            }
+
             const formData = new FormData();
             formData.append("conversationId", activeConvId);
             formData.append("file", file);
+            if (replyingTo && replyingTo.id) {
+                formData.append("replyToId", replyingTo.id);
+            }
+
+            clearReplyState();
 
             try {
                 const res = await fetch("/Chat/UploadFile", {
@@ -160,6 +618,8 @@ document.addEventListener("DOMContentLoaded", function () {
             activeConvId = targetId;
             document.body.dataset.activeConvId = targetId;
 
+            clearReplyState();
+            updatePinnedBanner(null);
             history.pushState(null, "", `/?conversationId=${targetId}`);
 
             try {
@@ -179,45 +639,25 @@ document.addEventListener("DOMContentLoaded", function () {
         const chatHeaderName = document.getElementById("chatHeaderName");
         if (chatHeaderName) chatHeaderName.textContent = convName;
 
-        if (chatStream) {
-            chatStream.innerHTML = "";
-            if (data.messages && data.messages.length > 0) {
-                data.messages.forEach(msg => {
-                    const initials = msg.senderName ? msg.senderName.split(' ').map(n => n[0]).slice(-2).join('') : 'U';
-                    const row = document.createElement("div");
-                    row.className = `msg-row ${msg.isSelf ? 'outgoing' : 'incoming'}`;
-                    row.innerHTML = `
-                        <div class="msg-avatar" title="${escapeHtml(msg.senderName)}">${initials}</div>
-                        <div class="msg-bubble-wrap">
-                            ${!msg.isSelf ? `<div class="msg-sender-name">${escapeHtml(msg.senderName)}</div>` : ''}
-                            <div class="msg-bubble">${escapeHtml(msg.content)}</div>
-                            <div class="msg-time">${msg.formattedTime}</div>
-                        </div>
-                    `;
-                    chatStream.appendChild(row);
-                });
-            } else {
-                chatStream.innerHTML = `<div class="text-center text-muted py-5">Chưa có tin nhắn nào. Hãy gửi lời chào nhé! 👋</div>`;
-            }
-            chatStream.scrollTop = chatStream.scrollHeight;
-        }
+        // Gọi API /Chat/Messages để lấy đầy đủ trạng thái Reply, Pin, Recall, Ảnh/File
+        syncCurrentConversationMessages(activeConvId);
 
         const memberList = document.getElementById("directoryMemberList");
         const memberCount = document.getElementById("directoryMemberCount");
         if (memberList && data.members) {
             if (memberCount) memberCount.textContent = data.members.length;
             memberList.innerHTML = data.members.map(m => {
-                const initials = m.displayName ? m.displayName.split(' ').map(n => n[0]).slice(-2).join('') : 'U';
+                const initials = m.displayName ? m.displayName.split(" ").map(n => n[0]).slice(-2).join("") : "U";
                 return `
                     <div class="member-item">
                         <div class="member-avatar">${initials}</div>
                         <div class="member-details">
                             <h6>${escapeHtml(m.displayName)}</h6>
-                            <p>${escapeHtml(m.bio || (m.role === 'Admin' ? 'Trưởng nhóm' : 'Thành viên'))}</p>
+                            <p>${escapeHtml(m.bio || (m.role === "Admin" ? "Trưởng nhóm" : "Thành viên"))}</p>
                         </div>
                     </div>
                 `;
-            }).join('');
+            }).join("");
         }
 
         updateFilesList(data.attachments || []);
@@ -257,7 +697,7 @@ document.addEventListener("DOMContentLoaded", function () {
                         <i class="bi bi-download"></i>
                     </a>
                 </div>
-            `).join('');
+            `).join("");
         } else {
             fileList.innerHTML = `<p class="text-muted small my-2">Chưa có tệp chia sẻ nào.</p>`;
         }
@@ -271,11 +711,7 @@ document.addEventListener("DOMContentLoaded", function () {
             document.querySelectorAll(".conv-item").forEach(item => {
                 const name = item.querySelector(".conv-name")?.textContent.toLowerCase() || "";
                 const preview = item.querySelector(".conv-preview")?.textContent.toLowerCase() || "";
-                if (name.includes(query) || preview.includes(query)) {
-                    item.style.display = "flex";
-                } else {
-                    item.style.display = "none";
-                }
+                item.style.display = (name.includes(query) || preview.includes(query)) ? "flex" : "none";
             });
         });
     }
@@ -301,7 +737,7 @@ document.addEventListener("DOMContentLoaded", function () {
                                 <span class="text-muted small">(${escapeHtml(f.email)})</span>
                             </label>
                         </div>
-                    `).join('');
+                    `).join("");
                 } else {
                     friendsSelectionList.innerHTML = `<div class="text-center text-muted py-3 small">Chưa có bạn bè nào để tạo nhóm.<br /><a href="/Friend/Search" class="btn btn-sm btn-link">Tìm bạn bè ngay</a></div>`;
                 }
@@ -353,8 +789,8 @@ document.addEventListener("DOMContentLoaded", function () {
     }
 
     function escapeHtml(str) {
-        if (!str) return '';
-        const div = document.createElement('div');
+        if (!str) return "";
+        const div = document.createElement("div");
         div.textContent = str;
         return div.innerHTML;
     }

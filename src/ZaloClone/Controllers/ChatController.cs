@@ -28,7 +28,7 @@ public class ChatController : Controller
     public async Task<IActionResult> Messages(Guid conversationId, int skip = 0, int take = 50)
     {
         var userId = User.GetUserId();
-        var result = await _chatService.GetMessagesAsync(conversationId, userId, skip, take);
+        var result = await _chatService.GetMessagesWithMetaAsync(conversationId, userId, skip, take);
         if (!result.Success)
         {
             return BadRequest(result);
@@ -45,7 +45,7 @@ public class ChatController : Controller
             return BadRequest(ApiResponse.Fail("Dữ liệu không hợp lệ."));
         }
 
-        var result = await _chatService.SendTextMessageAsync(dto.ConversationId, userId, dto.Content);
+        var result = await _chatService.SendTextMessageAsync(dto.ConversationId, userId, dto.Content, dto.ReplyToId);
         if (!result.Success)
         {
             return BadRequest(result);
@@ -54,7 +54,7 @@ public class ChatController : Controller
     }
 
     [HttpPost]
-    public async Task<IActionResult> UploadFile(Guid conversationId, IFormFile file)
+    public async Task<IActionResult> UploadFile(Guid conversationId, IFormFile file, Guid? replyToId = null)
     {
         var userId = User.GetUserId();
         if (conversationId == Guid.Empty || file == null || file.Length == 0)
@@ -62,7 +62,7 @@ public class ChatController : Controller
             return BadRequest(ApiResponse.Fail("File đính kèm không hợp lệ."));
         }
 
-        var result = await _chatService.SendFileAttachmentAsync(conversationId, userId, file);
+        var result = await _chatService.SendFileAttachmentAsync(conversationId, userId, file, replyToId);
         if (!result.Success)
         {
             return BadRequest(result);
@@ -87,6 +87,23 @@ public class ChatController : Controller
         return Json(result);
     }
 
+    [HttpPost]
+    public async Task<IActionResult> TogglePinMessage([FromBody] PinMessageDto dto)
+    {
+        var userId = User.GetUserId();
+        if (dto == null || dto.MessageId == Guid.Empty)
+        {
+            return BadRequest(ApiResponse.Fail("Dữ liệu không hợp lệ."));
+        }
+
+        var result = await _chatService.TogglePinMessageAsync(dto.MessageId, userId);
+        if (!result.Success)
+        {
+            return BadRequest(result);
+        }
+        return Json(result);
+    }
+
     [HttpGet]
     public async Task<IActionResult> Attachments(Guid conversationId)
     {
@@ -104,9 +121,15 @@ public class SendMessageDto
 {
     public Guid ConversationId { get; set; }
     public string Content { get; set; } = string.Empty;
+    public Guid? ReplyToId { get; set; }
 }
 
 public class RecallMessageDto
+{
+    public Guid MessageId { get; set; }
+}
+
+public class PinMessageDto
 {
     public Guid MessageId { get; set; }
 }

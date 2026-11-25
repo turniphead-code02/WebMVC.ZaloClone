@@ -92,4 +92,28 @@ public class FriendController : Controller
         var result = await _friendRequestService.BlockAsync(User.GetUserId(), friendId);
         return Json(result);
     }
+
+    //GIAI ĐOẠN 2
+
+    // Task 1: bấm "Nhắn tin" -> tìm/tạo chat 1-1 rồi trả đường dẫn khung chat
+    [HttpPost]
+    [ValidateAntiForgeryToken]
+    public async Task<IActionResult> StartChat(Guid friendId)
+    {
+        var result = await _friendRequestService.GetOrCreateDirectConversationAsync(User.GetUserId(), friendId);
+        if (result.Success && result.Data != null)
+        {
+            result.Data.Url = Url.Action("Index", "Home", new { conversationId = result.Data.ConversationId }) ?? "/";
+        }
+        return Json(result);
+    }
+
+    // Task 2: số lời mời đến đang chờ, hiện trên badge icon Bạn bè
+    [HttpGet]
+    public async Task<IActionResult> PendingCount()
+    {
+        var count = await _friendRequestService.CountIncomingPendingAsync(User.GetUserId());
+        return Json(ApiResponse<int>.Ok(count));
+    }
 }
+

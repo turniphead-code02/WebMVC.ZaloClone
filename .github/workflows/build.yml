@@ -7,7 +7,6 @@ on:
 jobs:
   build:
     runs-on: ubuntu-latest
-    if: ${{ hashFiles('**/*.csproj') != '' }}
     steps:
       - uses: actions/checkout@v4
 
@@ -16,10 +15,10 @@ jobs:
           global-json-file: global.json
 
       - name: Restore
-        run: dotnet restore
+        run: dotnet restore ZaloClone.sln
 
       - name: Build
-        run: dotnet build --no-restore --configuration Release -warnaserror
+        run: dotnet build ZaloClone.sln --no-restore --configuration Release -warnaserror
 
       - name: Test
-        run: dotnet test --no-build --configuration Release --verbosity normal
+        run: dotnet test ZaloClone.sln --no-build --configuration Release --verbosity normal
