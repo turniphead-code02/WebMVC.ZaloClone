@@ -72,7 +72,51 @@ public class ChatService : IChatService
         return ApiResponse<List<MessageDto>>.Ok(messages);
     }
 
-    public async Task<ApiResponse<MessageDto>> SendTextMessageAsync(Guid conversationId, Guid senderId, string content)
+    public async Task<ApiResponse<List<ChatMessageDetailDto>>> GetMessagesWithMetaAsync(Guid conversationId, Guid userId, int skip = 0, int take = 50)
+    {
+        var isMember = await _context.ConversationMembers
+            .AnyAsync(m => m.ConversationId == conversationId && m.UserId == userId && m.LeftAt == null);
+
+        if (!isMember)
+        {
+            return ApiResponse<List<ChatMessageDetailDto>>.Fail("Bạn không phải thành viên của cuộc trò chuyện này.");
+        }
+
+        var messages = await _context.Messages
+            .Where(m => m.ConversationId == conversationId)
+            .Include(m => m.Sender)
+            .Include(m => m.Attachments)
+            .Include(m => m.ReplyTo)
+                .ThenInclude(r => r!.Sender)
+            .OrderBy(m => m.CreatedAt)
+            .Skip(skip)
+            .Take(take)
+            .Select(m => new ChatMessageDetailDto
+            {
+                Id = m.Id,
+                SenderId = m.SenderId ?? Guid.Empty,
+                SenderName = m.Sender != null ? m.Sender.DisplayName : "Hệ thống",
+                SenderAvatar = m.Sender != null ? m.Sender.AvatarUrl : null,
+                Content = m.IsRecalled ? "Tin nhắn đã được thu hồi" : (m.Content ?? ""),
+                MessageType = m.IsRecalled ? "Recalled" : m.MessageType,
+                CreatedAt = m.CreatedAt,
+                FormattedTime = m.CreatedAt.ToString("HH:mm"),
+                IsSelf = m.SenderId == userId,
+                ReplyToId = m.ReplyToId,
+                ReplyToSenderName = m.ReplyTo != null
+                    ? (m.ReplyTo.Sender != null ? m.ReplyTo.Sender.DisplayName : "Hệ thống")
+                    : null,
+                ReplyToContent = m.ReplyTo != null
+                    ? (m.ReplyTo.IsRecalled ? "Tin nhắn đã được thu hồi" : (m.ReplyTo.Content ?? ""))
+                    : null,
+                IsPinned = m.IsPinned && !m.IsRecalled
+            })
+            .ToListAsync();
+
+        return ApiResponse<List<ChatMessageDetailDto>>.Ok(messages);
+    }
+
+    public async Task<ApiResponse<MessageDto>> SendTextMessageAsync(Guid conversationId, Guid senderId, string content, Guid? replyToId = null)
     {
         if (string.IsNullOrWhiteSpace(content))
         {
@@ -87,6 +131,14 @@ public class ChatService : IChatService
             return ApiResponse<MessageDto>.Fail("Bạn không phải thành viên của cuộc trò chuyện này.");
         }
 
+        Message? replyMsg = null;
+        if (replyToId.HasValue)
+        {
+            replyMsg = await _context.Messages
+                .Include(m => m.Sender)
+                .FirstOrDefaultAsync(m => m.Id == replyToId.Value && m.ConversationId == conversationId);
+        }
+
         var sender = await _context.Users.FindAsync(senderId);
         var now = DateTimeOffset.UtcNow;
 
@@ -97,6 +149,7 @@ public class ChatService : IChatService
             SenderId = senderId,
             Content = content.Trim(),
             MessageType = "Text",
+            ReplyToId = replyMsg?.Id,
             CreatedAt = now
         };
 
@@ -110,6 +163,11 @@ public class ChatService : IChatService
         }
 
         await _context.SaveChangesAsync();
+
+        var replySenderName = replyMsg != null ? (replyMsg.Sender?.DisplayName ?? "Hệ thống") : null;
+        var replyContent = replyMsg != null
+            ? (replyMsg.IsRecalled ? "Tin nhắn đã được thu hồi" : (replyMsg.Content ?? ""))
+            : null;
 
         var dto = new MessageDto
         {
@@ -134,13 +192,17 @@ public class ChatService : IChatService
                 senderAvatar = dto.SenderAvatar ?? "",
                 content = message.Content,
                 messageType = message.MessageType,
+                replyToId = message.ReplyToId,
+                replyToSenderName = replySenderName,
+                replyToContent = replyContent,
+                isPinned = false,
                 createdAt = dto.FormattedTime
             });
 
         return ApiResponse<MessageDto>.Ok(dto, "Gửi tin nhắn thành công.");
     }
 
-    public async Task<ApiResponse<MessageDto>> SendFileAttachmentAsync(Guid conversationId, Guid senderId, IFormFile file)
+    public async Task<ApiResponse<MessageDto>> SendFileAttachmentAsync(Guid conversationId, Guid senderId, IFormFile file, Guid? replyToId = null)
     {
         if (file == null || file.Length == 0)
         {
@@ -185,6 +247,14 @@ public class ChatService : IChatService
             return ApiResponse<MessageDto>.Fail($"Không thể lưu file: {ex.Message}");
         }
 
+        Message? replyMsg = null;
+        if (replyToId.HasValue)
+        {
+            replyMsg = await _context.Messages
+                .Include(m => m.Sender)
+                .FirstOrDefaultAsync(m => m.Id == replyToId.Value && m.ConversationId == conversationId);
+        }
+
         var sender = await _context.Users.FindAsync(senderId);
         var now = DateTimeOffset.UtcNow;
         var fileUrl = _storageService.GetRelativeUrl(storageKey);
@@ -196,6 +266,7 @@ public class ChatService : IChatService
             SenderId = senderId,
             Content = isImage ? $"[Ảnh] {file.FileName}" : $"[Tệp] {file.FileName}",
             MessageType = isImage ? "Image" : "File",
+            ReplyToId = replyMsg?.Id,
             CreatedAt = now
         };
 
@@ -223,6 +294,11 @@ public class ChatService : IChatService
 
         await _context.SaveChangesAsync();
 
+        var replySenderName = replyMsg != null ? (replyMsg.Sender?.DisplayName ?? "Hệ thống") : null;
+        var replyContent = replyMsg != null
+            ? (replyMsg.IsRecalled ? "Tin nhắn đã được thu hồi" : (replyMsg.Content ?? ""))
+            : null;
+
         var dto = new MessageDto
         {
             Id = message.Id,
@@ -249,6 +325,10 @@ public class ChatService : IChatService
                 fileUrl = fileUrl,
                 fileName = file.FileName,
                 fileSize = file.Length,
+                replyToId = message.ReplyToId,
+                replyToSenderName = replySenderName,
+                replyToContent = replyContent,
+                isPinned = false,
                 createdAt = dto.FormattedTime
             });
 
@@ -275,12 +355,105 @@ public class ChatService : IChatService
 
         message.IsRecalled = true;
         message.RecalledAt = DateTimeOffset.UtcNow;
+
+        if (message.IsPinned)
+        {
+            message.IsPinned = false;
+            message.PinnedAt = null;
+            message.PinnedById = null;
+        }
+
         await _context.SaveChangesAsync();
 
         await _hubContext.Clients.Group(ChatHub.GetConversationGroupName(message.ConversationId))
             .SendAsync("MessageRecalled", new { messageId = message.Id, conversationId = message.ConversationId });
 
         return ApiResponse.Ok("Đã thu hồi tin nhắn.");
+    }
+
+    public async Task<ApiResponse<ChatMessageDetailDto>> TogglePinMessageAsync(Guid messageId, Guid userId)
+    {
+        var message = await _context.Messages
+            .Include(m => m.Sender)
+            .FirstOrDefaultAsync(m => m.Id == messageId);
+
+        if (message == null)
+        {
+            return ApiResponse<ChatMessageDetailDto>.Fail("Không tìm thấy tin nhắn.");
+        }
+
+        var isMember = await _context.ConversationMembers
+            .AnyAsync(m => m.ConversationId == message.ConversationId && m.UserId == userId && m.LeftAt == null);
+
+        if (!isMember)
+        {
+            return ApiResponse<ChatMessageDetailDto>.Fail("Bạn không phải thành viên của cuộc trò chuyện này.");
+        }
+
+        if (message.IsRecalled)
+        {
+            return ApiResponse<ChatMessageDetailDto>.Fail("Không thể ghim tin nhắn đã thu hồi.");
+        }
+
+        var now = DateTimeOffset.UtcNow;
+        bool newPinState = !message.IsPinned;
+
+        if (newPinState)
+        {
+            var oldPinned = await _context.Messages
+                .Where(m => m.ConversationId == message.ConversationId && m.IsPinned && m.Id != message.Id)
+                .ToListAsync();
+
+            foreach (var old in oldPinned)
+            {
+                old.IsPinned = false;
+                old.PinnedAt = null;
+                old.PinnedById = null;
+            }
+
+            message.IsPinned = true;
+            message.PinnedAt = now;
+            message.PinnedById = userId;
+        }
+        else
+        {
+            message.IsPinned = false;
+            message.PinnedAt = null;
+            message.PinnedById = null;
+        }
+
+        await _context.SaveChangesAsync();
+
+        var pinnedBy = await _context.Users.FindAsync(userId);
+        var senderName = message.Sender?.DisplayName ?? "Hệ thống";
+        var content = message.Content ?? "";
+
+        await _hubContext.Clients.Group(ChatHub.GetConversationGroupName(message.ConversationId))
+            .SendAsync("MessagePinned", new
+            {
+                conversationId = message.ConversationId,
+                messageId = message.Id,
+                isPinned = message.IsPinned,
+                senderName = senderName,
+                content = content,
+                pinnedByName = pinnedBy?.DisplayName ?? "Người dùng"
+            });
+
+        var dto = new ChatMessageDetailDto
+        {
+            Id = message.Id,
+            SenderId = message.SenderId ?? Guid.Empty,
+            SenderName = senderName,
+            SenderAvatar = message.Sender?.AvatarUrl,
+            Content = content,
+            MessageType = message.MessageType,
+            CreatedAt = message.CreatedAt,
+            FormattedTime = message.CreatedAt.ToString("HH:mm"),
+            IsSelf = message.SenderId == userId,
+            IsPinned = message.IsPinned
+        };
+
+        return ApiResponse<ChatMessageDetailDto>.Ok(dto, message.IsPinned ? "Đã ghim tin nhắn." : "Đã bỏ ghim tin nhắn.");
     }
 
     public async Task<ApiResponse<List<AttachmentDto>>> GetAttachmentsAsync(Guid conversationId, Guid userId)

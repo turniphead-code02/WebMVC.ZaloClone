@@ -79,8 +79,11 @@ public class HomeController : Controller
             }
 
             var lastMsg = c.LastMessage;
+            string lastContent = lastMsg == null
+                ? ""
+                : (lastMsg.IsRecalled ? "Tin nhắn đã được thu hồi" : (lastMsg.Content ?? ""));
             string preview = lastMsg != null
-                ? (lastMsg.SenderId == currentUserId ? $"Bạn: {lastMsg.Content}" : (lastMsg.Content ?? ""))
+                ? (lastMsg.SenderId == currentUserId ? $"Bạn: {lastContent}" : lastContent)
                 : "Chưa có tin nhắn";
 
             string formattedTime = "";
@@ -134,8 +137,8 @@ public class HomeController : Controller
                     SenderId = msg.SenderId ?? Guid.Empty,
                     SenderName = msg.Sender != null ? msg.Sender.DisplayName : "Hệ thống",
                     SenderAvatar = msg.Sender != null ? msg.Sender.AvatarUrl : null,
-                    Content = msg.Content ?? "",
-                    MessageType = msg.MessageType,
+                    Content = msg.IsRecalled ? "Tin nhắn đã được thu hồi" : (msg.Content ?? ""),
+                    MessageType = msg.IsRecalled ? "Recalled" : msg.MessageType,
                     CreatedAt = msg.CreatedAt,
                     FormattedTime = msg.CreatedAt.ToString("HH:mm"),
                     IsSelf = msg.SenderId == currentUserId
@@ -218,8 +221,8 @@ public class HomeController : Controller
                 SenderId = msg.SenderId ?? Guid.Empty,
                 SenderName = msg.Sender != null ? msg.Sender.DisplayName : "Hệ thống",
                 SenderAvatar = msg.Sender != null ? msg.Sender.AvatarUrl : null,
-                Content = msg.Content ?? "",
-                MessageType = msg.MessageType,
+                Content = msg.IsRecalled ? "Tin nhắn đã được thu hồi" : (msg.Content ?? ""),
+                MessageType = msg.IsRecalled ? "Recalled" : msg.MessageType,
                 CreatedAt = msg.CreatedAt,
                 FormattedTime = msg.CreatedAt.ToString("HH:mm"),
                 IsSelf = msg.SenderId == currentUserId
