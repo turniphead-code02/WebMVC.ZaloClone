@@ -84,7 +84,7 @@ public class ChatTests(ZaloAppFactory factory)
         Assert.DoesNotContain("Tin 1", body);
     }
 
-    [Fact(DisplayName = "CHAT-12 Tin đã thu hồi không lộ nội dung gốc khi tải lại hội thoại", Skip = "Bug #5 — bỏ Skip khi đã sửa")]
+    [Fact(DisplayName = "CHAT-12 Tin đã thu hồi không lộ nội dung gốc khi tải lại hội thoại")]
     public async Task GetConversationData_RecalledMessage_HidesOriginalContent()
     {
         var conversationId = await CreateConversationAsync(User1Id, User2Id);

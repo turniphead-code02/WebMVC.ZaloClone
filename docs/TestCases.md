@@ -93,7 +93,7 @@ Giao diện gửi tin qua hub `SendMessage`; khi mất kết nối thì gọi `P
 | CHAT-09 | Sai định dạng file | Như CHAT-01 | Gửi `.exe`, `.bat`, `.mp4` | Báo định dạng không hỗ trợ, không tạo tin | ⬜ Chưa test | |
 | CHAT-10 | Vượt dung lượng | Như CHAT-01 | Gửi ảnh 11 MB; file 35 MB; file 51 MB | Báo vượt giới hạn bằng thông báo tiếng Việt. **Nghi lỗi:** không cấu hình `RequestSizeLimit`, Kestrel mặc định chặn ~28,6 MB nên file 30–50 MB có thể báo lỗi 413 dù quy định cho phép 50 MB | ⬜ Chưa test | |
 | CHAT-11 | Thu hồi tin của mình | Như CHAT-01 | A thu hồi tin vừa gửi | Cả hai bên thấy "Tin nhắn đã được thu hồi" ngay | ⬜ Chưa test | |
-| CHAT-12 | Tin đã thu hồi sau khi F5 | Đã làm CHAT-11 | Cả A và B F5, chuyển hội thoại rồi quay lại, xem dòng xem trước ở Cột 2 | Vẫn hiện "đã thu hồi". **Nghi lỗi:** `HomeController` (Index, `GetConversationData`, xem trước Cột 2) không kiểm tra `IsRecalled` nên nội dung gốc hiện lại | ❌ Fail | #5 |
+| CHAT-12 | Tin đã thu hồi sau khi F5 | Đã làm CHAT-11 | Cả A và B F5, chuyển hội thoại rồi quay lại, xem dòng xem trước ở Cột 2 | Vẫn hiện "đã thu hồi" | ✅ Pass (test tự động, sau `3f472b9`; dòng xem trước Cột 2 cần test tay) | #5 |
 | CHAT-13 | Không thu hồi được tin người khác | Như CHAT-01 | B gọi thu hồi tin của A (qua DevTools: `POST /Chat/RecallMessage` với `messageId` của A) | Bị từ chối | ✅ Pass |  |
 | CHAT-14 | Thu hồi tin có file | Đã gửi file | Thu hồi tin chứa file → mở lại link file cũ | Link file không còn tải được. Code hiện giữ nguyên file trên ổ đĩa; ghi lại kết quả | ⬜ Chưa test | |
 
