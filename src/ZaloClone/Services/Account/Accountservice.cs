@@ -44,11 +44,13 @@ public class AccountService : IAccountService
     private sealed class OtpEntry
     {
         public string Otp { get; init; } = string.Empty;
+        public DateTimeOffset CreatedAt { get; init; }
         public DateTimeOffset ExpiresAt { get; init; }
         public int FailedAttempts { get; set; }
     }
 
     private const int _maxOtpAttempts = 5;
+    private const int _otpCooldownSeconds = 30;
     private static readonly ConcurrentDictionary<string, OtpEntry> _otpStore = new();
     private static readonly string[] _allowedExtensions = [".jpg", ".jpeg", ".png", ".webp"];
 
@@ -208,13 +210,27 @@ public class AccountService : IAccountService
             return ApiResponse<string>.Fail("Không tìm thấy tài khoản nào khớp với Email hoặc Số điện thoại vừa nhập.");
         }
 
+        var emailKey = user.Email.ToLowerInvariant();
+        var now = DateTimeOffset.UtcNow;
+        if (_otpStore.TryGetValue(emailKey, out var existing) && existing.ExpiresAt > now)
+        {
+            var elapsed = (now - existing.CreatedAt).TotalSeconds;
+            if (elapsed < _otpCooldownSeconds)
+            {
+                var remain = (int)Math.Ceiling(_otpCooldownSeconds - elapsed);
+                return ApiResponse<string>.Fail($"Vui lòng chờ {remain} giây trước khi yêu cầu mã OTP mới.");
+            }
+        }
+
         var otp = RandomNumberGenerator.GetInt32(100000, 1000000).ToString();
-        _otpStore[user.Email.ToLowerInvariant()] = new OtpEntry
+        _otpStore[emailKey] = new OtpEntry
         {
             Otp = otp,
-            ExpiresAt = DateTimeOffset.UtcNow.AddMinutes(10),
+            CreatedAt = now,
+            ExpiresAt = now.AddMinutes(10),
             FailedAttempts = 0
         };
+        Console.WriteLine($"[OTP] Email: {user.Email} | Code: {otp} | ExpiresAt: {now.AddMinutes(10):O}");
 
         return ApiResponse<string>.Ok(user.Email, $"Mã xác thực OTP của tài khoản {user.Email} là: {otp} (Hiệu lực 10 phút).");
     }
