@@ -1,4 +1,4 @@
-#pragma warning disable IDE1006, IDE0290, IDE0305, IDE0028, IDE0031, IDE0057, CA1853, CA1862
+#pragma warning disable IDE0060, IDE1006, IDE0290, IDE0305, IDE0028, IDE0031, IDE0057, CA1853, CA1862
 using System;
 using System.IO;
 using System.Linq;
@@ -10,6 +10,7 @@ using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 using ZaloClone.Data;
 using ZaloClone.Infrastructure;
@@ -102,7 +103,7 @@ public class AccountController : Controller
         }
         else if (User.Identity?.IsAuthenticated == true)
         {
-            return User.IsAdmin() ? RedirectToAction("Index", "Admin") : LocalRedirect(returnUrl ?? "/");
+            return User.IsAdmin() ? RedirectToAction("Admin", "Admin") : LocalRedirect(returnUrl ?? "/");
         }
         else if (Request.Cookies.ContainsKey("ZaloClone.Auth") && !string.IsNullOrEmpty(returnUrl))
         {
@@ -111,12 +112,14 @@ public class AccountController : Controller
         }
 
         ViewBag.ReturnUrl = returnUrl;
-        ViewBag.SampleUsers = await _db.Users
-            .AsNoTracking()
-            .Where(u => !u.IsDeleted && !u.IsLocked)
-            .OrderBy(u => u.Email)
-            .Take(6)
-            .ToListAsync();
+        ViewBag.SampleUsers = _env.IsDevelopment()
+            ? await _db.Users
+                .AsNoTracking()
+                .Where(u => !u.IsDeleted && !u.IsLocked && u.Role != "Admin")
+                .OrderBy(u => u.Email)
+                .Take(6)
+                .ToListAsync()
+            : new System.Collections.Generic.List<User>();
 
         return View(new LoginViewModel { ReturnUrl = returnUrl });
     }
@@ -129,12 +132,14 @@ public class AccountController : Controller
         if (!ModelState.IsValid)
         {
             TempData["ErrorMessage"] = "Vui lòng nhập đầy đủ thông tin đăng nhập.";
-            ViewBag.SampleUsers = await _db.Users
-                .AsNoTracking()
-                .Where(u => !u.IsDeleted && !u.IsLocked)
-                .OrderBy(u => u.Email)
-                .Take(6)
-                .ToListAsync();
+            ViewBag.SampleUsers = _env.IsDevelopment()
+                ? await _db.Users
+                    .AsNoTracking()
+                    .Where(u => !u.IsDeleted && !u.IsLocked && u.Role != "Admin")
+                    .OrderBy(u => u.Email)
+                    .Take(6)
+                    .ToListAsync()
+                : new System.Collections.Generic.List<User>();
             return View(model);
         }
 
@@ -143,12 +148,14 @@ public class AccountController : Controller
         {
             TempData["ErrorMessage"] = result.Message ?? "Đăng nhập thất bại.";
             ModelState.AddModelError(string.Empty, result.Message ?? "Đăng nhập thất bại.");
-            ViewBag.SampleUsers = await _db.Users
-                .AsNoTracking()
-                .Where(u => !u.IsDeleted && !u.IsLocked)
-                .OrderBy(u => u.Email)
-                .Take(6)
-                .ToListAsync();
+            ViewBag.SampleUsers = _env.IsDevelopment()
+                ? await _db.Users
+                    .AsNoTracking()
+                    .Where(u => !u.IsDeleted && !u.IsLocked && u.Role != "Admin")
+                    .OrderBy(u => u.Email)
+                    .Take(6)
+                    .ToListAsync()
+                : new System.Collections.Generic.List<User>();
             return View(model);
         }
 
@@ -161,15 +168,21 @@ public class AccountController : Controller
         }
 
         return string.Equals(result.Data.Role, "Admin", StringComparison.OrdinalIgnoreCase)
-            ? RedirectToAction("Index", "Admin")
+            ? RedirectToAction("Admin", "Admin")
             : LocalRedirect("/");
     }
 
-    // QuickLogin cho môi trường Dev & Test
-    [HttpGet]
+    // QuickLogin cho môi trường Dev & Test (Issue #2: Chỉ bật ở Development, chỉ POST + AntiForgeryToken, chặn Admin)
     [HttpPost]
+    [AllowAnonymous]
+    [ValidateAntiForgeryToken]
     public async Task<IActionResult> QuickLogin(Guid userId, string? returnUrl = null)
     {
+        if (!_env.IsDevelopment())
+        {
+            return NotFound();
+        }
+
         var user = await _db.Users.FirstOrDefaultAsync(u => u.Id == userId && !u.IsDeleted && !u.IsLocked);
         if (user == null)
         {
@@ -177,8 +190,19 @@ public class AccountController : Controller
             return RedirectToAction(nameof(Login));
         }
 
+        if (string.Equals(user.Role, "Admin", StringComparison.OrdinalIgnoreCase))
+        {
+            TempData["ErrorMessage"] = "Không được phép dùng QuickLogin cho tài khoản Admin.";
+            return RedirectToAction(nameof(Login));
+        }
+
         await _accountService.SignInUserAsync(HttpContext, user, isPersistent: true);
-        return LocalRedirect(returnUrl ?? "/");
+        if (!string.IsNullOrEmpty(returnUrl) && Url.IsLocalUrl(returnUrl))
+        {
+            return Redirect(returnUrl);
+        }
+
+        return LocalRedirect("/");
     }
 
     // 3. ĐĂNG XUẤT (/Account/Logout)
@@ -233,7 +257,10 @@ public class AccountController : Controller
             return View(viewPath, model);
         }
 
-        TempData["DevOtpNotice"] = result.Message;
+        if (_env.IsDevelopment() || _env.IsEnvironment("Testing"))
+        {
+            TempData["DevOtpNotice"] = result.Message;
+        }
         TempData["SuccessMessage"] = "Đã tạo mã xác thực OTP khôi phục mật khẩu!";
         return RedirectToAction(nameof(ResetPassword), new { email = result.Data });
     }

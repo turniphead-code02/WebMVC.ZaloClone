@@ -1,7 +1,8 @@
-#pragma warning disable IDE1006, IDE0290, IDE0305, IDE0028, IDE0031, IDE0057, CA1853, CA1854, CA1862
+#pragma warning disable IDE0060, IDE1006, IDE0290, IDE0305, IDE0028, IDE0031, IDE0057, CA1853, CA1854, CA1862
 using System;
 using System.Collections.Generic;
 using System.IO;
+using System.Linq;
 using System.Text.Json;
 using System.Threading.Tasks;
 using Microsoft.AspNetCore.Authentication;
@@ -11,6 +12,7 @@ using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
 using ZaloClone.Data;
 using ZaloClone.Infrastructure;
@@ -22,11 +24,12 @@ namespace ZaloClone.Controllers;
 
 /// <summary>
 /// Đặt tại: src/ZaloClone/Controllers/ProfileController.cs
-/// Phụ trách: Xem &amp; sửa thông tin cá nhân, Đổi mật khẩu (xoay SecurityStamp), Cập nhật &amp; Xóa Avatar (Task 1), Đặt biệt danh thân mật.
+/// Phụ trách: Xem &amp; sửa thông tin cá nhân, Ảnh đại diện (Avatar), Ảnh nền (Cover), Đổi mật khẩu (xoay SecurityStamp), Đặt biệt danh thân mật.
 /// </summary>
 [Authorize]
 public class ProfileController : Controller
 {
+    private readonly AppDbContext _db;
     private readonly IAccountService _accountService;
     private readonly IWebHostEnvironment _env;
 
@@ -38,6 +41,7 @@ public class ProfileController : Controller
         ILogger<AccountService>? logger = null,
         IAccountService? accountService = null)
     {
+        _db = db;
         _env = env;
         _accountService = accountService ?? new AccountService(db, passwordHasher, fileStorageService, env);
     }
@@ -86,7 +90,7 @@ public class ProfileController : Controller
         return RedirectToAction(nameof(Index));
     }
 
-    // 3. CẬP NHẬT & XÓA ẢNH ĐẠI DIỆN AVATAR (TASK 1 - ĐỒNG BỘ 4 CỘT)
+    // 3. CẬP NHẬT & XÓA ẢNH ĐẠI DIỆN AVATAR (POST: /Profile/UpdateAvatar & /Profile/DeleteAvatar)
     [HttpPost]
     [ValidateAntiForgeryToken]
     public async Task<IActionResult> UpdateAvatar(IFormFile? avatarFile)
@@ -119,7 +123,42 @@ public class ProfileController : Controller
         return RedirectToAction(nameof(Index));
     }
 
-    // 4. ĐỔI MẬT KHẨU & XOAY SECURITYSTAMP (TASK 2 - ĐĂNG XUẤT TRÌNH DUYỆT KHÁC)
+    // 4. CẬP NHẬT & XÓA ẢNH NỀN COVER (POST: /Profile/UpdateCover & /Profile/DeleteCover)
+    [HttpPost]
+    [ValidateAntiForgeryToken]
+    public async Task<IActionResult> UpdateCover(IFormFile? coverFile)
+    {
+        var userId = User.GetUserId();
+        var result = await _accountService.UpdateCoverAsync(userId, coverFile);
+        if (!result.Success)
+        {
+            TempData["ErrorMessage"] = result.Message;
+            return RedirectToAction(nameof(Index));
+        }
+
+        TempData["SuccessMessage"] = result.Message;
+        return RedirectToAction(nameof(Index));
+    }
+
+    [HttpPost]
+    [ValidateAntiForgeryToken]
+    public async Task<IActionResult> DeleteCover()
+    {
+        var userId = User.GetUserId();
+        var result = await _accountService.DeleteCoverAsync(userId);
+        if (result.Success)
+        {
+            TempData["SuccessMessage"] = result.Message;
+        }
+        else
+        {
+            TempData["ErrorMessage"] = result.Message;
+        }
+
+        return RedirectToAction(nameof(Index));
+    }
+
+    // 5. ĐỔI MẬT KHẨU & XOAY SECURITYSTAMP (POST: /Profile/ChangePassword)
     [HttpGet]
     public IActionResult ChangePassword()
     {
@@ -128,19 +167,28 @@ public class ProfileController : Controller
 
     [HttpPost]
     [ValidateAntiForgeryToken]
-    public async Task<IActionResult> ChangePassword(ChangePasswordViewModel model)
+    public async Task<IActionResult> ChangePassword(ChangePasswordViewModel model, bool fromProfile = false)
     {
         if (!ModelState.IsValid)
         {
-            TempData["ErrorMessage"] = "Vui lòng kiểm tra lại thông tin mật khẩu.";
-            return View(model);
+            var firstError = ModelState.Values
+                .SelectMany(v => v.Errors)
+                .Select(e => e.ErrorMessage)
+                .FirstOrDefault(m => !string.IsNullOrWhiteSpace(m));
+            TempData["ErrorMessage"] = firstError ?? "Vui lòng kiểm tra lại thông tin mật khẩu.";
+            return fromProfile ? RedirectToAction(nameof(Index)) : View(model);
         }
 
         var userId = User.GetUserId();
         var result = await _accountService.ChangePasswordAsync(userId, model);
         if (!result.Success || result.Data == null)
         {
-            TempData["ErrorMessage"] = result.Message;
+            TempData["ErrorMessage"] = result.Message ?? "Đổi mật khẩu thất bại.";
+            if (fromProfile)
+            {
+                return RedirectToAction(nameof(Index));
+            }
+
             ModelState.AddModelError(nameof(model.CurrentPassword), result.Message ?? "Đổi mật khẩu thất bại.");
             return View(model);
         }
@@ -150,7 +198,72 @@ public class ProfileController : Controller
         return RedirectToAction(nameof(Index));
     }
 
-    // 5. ĐẶT BIỆT DANH THÂN MẬT CHO NGƯỜI KHÁC (POST: /Profile/SaveNickname)
+
+    [HttpPost]
+    [ValidateAntiForgeryToken]
+    public async Task<IActionResult> SendChangePasswordOtp()
+    {
+        var userId = User.GetUserId();
+        var user = await _db.Users.AsNoTracking().FirstOrDefaultAsync(u => u.Id == userId && !u.IsDeleted);
+        if (user == null)
+        {
+            return Json(new { success = false, message = "Không tìm thấy tài khoản." });
+        }
+
+        var result = await _accountService.GenerateForgotPasswordOtpAsync(user.Email);
+        return Json(new { success = result.Success, message = result.Message });
+    }
+
+    [HttpPost]
+    [ValidateAntiForgeryToken]
+    public async Task<IActionResult> ResetPasswordByOtp(string otpCode, string newPassword, string confirmNewPassword)
+    {
+        var userId = User.GetUserId();
+        var user = await _db.Users.FirstOrDefaultAsync(u => u.Id == userId && !u.IsDeleted);
+        if (user == null)
+        {
+            TempData["ErrorMessage"] = "Không tìm thấy tài khoản.";
+            return RedirectToAction(nameof(Index));
+        }
+
+        if (string.IsNullOrWhiteSpace(newPassword) || newPassword.Length < 6)
+        {
+            TempData["ErrorMessage"] = "Mật khẩu mới tối thiểu 6 ký tự.";
+            return RedirectToAction(nameof(Index));
+        }
+
+        if (newPassword != confirmNewPassword)
+        {
+            TempData["ErrorMessage"] = "Mật khẩu xác nhận không khớp.";
+            return RedirectToAction(nameof(Index));
+        }
+
+        var vm = new ResetPasswordViewModel
+        {
+            Email = user.Email,
+            OtpCode = (otpCode ?? string.Empty).Trim(),
+            NewPassword = newPassword,
+            ConfirmNewPassword = confirmNewPassword
+        };
+
+        var result = await _accountService.ResetPasswordWithOtpAsync(vm);
+        if (!result.Success)
+        {
+            TempData["ErrorMessage"] = result.Message ?? "Mã OTP không hợp lệ.";
+            return RedirectToAction(nameof(Index));
+        }
+
+        var updatedUser = await _db.Users.AsNoTracking().FirstOrDefaultAsync(u => u.Id == userId && !u.IsDeleted);
+        if (updatedUser != null)
+        {
+            await _accountService.SignInUserAsync(HttpContext, updatedUser, isPersistent: true);
+        }
+
+        TempData["SuccessMessage"] = result.Message;
+        return RedirectToAction(nameof(Index));
+    }
+
+    // 6. ĐẶT BIỆT DANH THÂN MẬT CHO NGƯỜI KHÁC (POST: /Profile/SaveNickname)
     [HttpPost]
     [ValidateAntiForgeryToken]
     public IActionResult SaveNickname(Guid targetUserId, string? nickname, Guid? returnConvId = null)

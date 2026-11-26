@@ -4,6 +4,8 @@
 	string avatarSrc = string.IsNullOrWhiteSpace(Model.AvatarUrl)
 		? "https://ui-avatars.com/api/?name=" + Uri.EscapeDataString(Model.DisplayName) + "&background=0068ff&color=fff&size=240"
 		: Model.AvatarUrl;
+	bool hasAvatar = !string.IsNullOrWhiteSpace(Model.AvatarUrl);
+	bool hasCover = !string.IsNullOrWhiteSpace(Model.CoverUrl);
 	string maxDate = DateTime.Today.ToString("yyyy-MM-dd");
 }
 
@@ -38,6 +40,47 @@
 	.zalo-toast-error {
 		background: linear-gradient(135deg, #ef4444 0%, #dc2626 100%);
 	}
+
+	.profile-cover-box {
+		position: relative;
+		height: 150px;
+		overflow: hidden;
+		background: linear-gradient(135deg, #0068ff 0%, #3b82f6 60%, #60a5fa 100%);
+		cursor: pointer;
+	}
+
+	.profile-cover-box img {
+		width: 100%;
+		height: 100%;
+		object-fit: cover;
+		display: block;
+	}
+
+	.profile-cover-badge {
+		position: absolute;
+		bottom: 8px;
+		right: 10px;
+		background: rgba(0, 0, 0, 0.55);
+		color: #ffffff;
+		font-size: 12px;
+		padding: 4px 10px;
+		border-radius: 20px;
+		backdrop-filter: blur(4px);
+	}
+
+	.profile-avatar-overlap {
+		margin-top: -58px;
+		position: relative;
+		z-index: 2;
+	}
+
+	.profile-avatar-clickable {
+		width: 118px;
+		height: 118px;
+		object-fit: cover;
+		border: 4px solid #ffffff;
+		cursor: pointer;
+	}
 </style>
 
 <div class="zalo-toast-container">
@@ -63,56 +106,96 @@
 	<div class="d-flex justify-content-between align-items-center mb-3">
 		<h4 class="fw-bold mb-0" style="color:#0068ff;">Trang cá nhân</h4>
 		<a asp-controller="Home" asp-action="Index" class="btn btn-primary btn-sm px-3 fw-semibold" style="background-color:#0068ff;">
-			Quay lại màn hình Chat 4 cột
+			<i class="bi bi-arrow-left me-1"></i>Quay lại màn hình chat
 		</a>
 	</div>
 
 	<div class="row g-4">
 		<div class="col-lg-4">
-			<div class="card shadow-sm border-0 rounded-4 text-center p-4">
-				<div class="position-relative d-inline-block mx-auto mb-3">
-					<img id="avatarPreview"
-						 src="@avatarSrc"
-						 alt="Avatar của @Model.DisplayName"
-						 class="profile-avatar rounded-circle border shadow-sm"
-						 style="width: 140px; height: 140px; object-fit: cover;" />
+			<div class="card shadow-sm border-0 rounded-4 overflow-hidden text-center">
+				<!-- ẢNH NỀN (COVER) -->
+				<div class="profile-cover-box" onclick="openProfileImagePreview('@(hasCover ? Model.CoverUrl : "")', 'Ảnh nền của @Model.DisplayName')" title="Bấm để xem ảnh nền">
+					@if (hasCover)
+					{
+						<img src="@Model.CoverUrl" alt="Ảnh nền của @Model.DisplayName" />
+					}
+					<span class="profile-cover-badge">
+						<i class="bi bi-arrows-fullscreen me-1"></i>Xem ảnh nền
+					</span>
 				</div>
 
-				<h5 class="fw-bold mb-1">@Model.DisplayName</h5>
-				<p class="text-muted small mb-3">@Model.Email</p>
-
-				<form asp-controller="Profile" asp-action="UpdateAvatar" method="post" enctype="multipart/form-data" class="mt-2">
-					@Html.AntiForgeryToken()
-					<div class="mb-2">
-						<input type="file"
-							   name="avatarFile"
-							   id="avatarFileInput"
-							   accept=".jpg,.jpeg,.png,.webp"
-							   class="form-control form-control-sm"
-							   required />
+				<div class="p-4 pt-0">
+					<!-- ẢNH ĐẠI DIỆN (AVATAR) -->
+					<div class="profile-avatar-overlap d-inline-block mx-auto mb-2">
+						<img id="avatarPreview"
+							 src="@avatarSrc"
+							 alt="Avatar của @Model.DisplayName"
+							 class="profile-avatar rounded-circle shadow-sm profile-avatar-clickable"
+							 onclick="openProfileImagePreview('@avatarSrc', 'Ảnh đại diện của @Model.DisplayName')"
+							 title="Bấm để xem ảnh đại diện" />
 					</div>
-					<button type="submit" class="btn btn-primary btn-sm w-100 fw-semibold" style="background-color:#0068ff;">
-						Cập nhật ảnh đại diện (Avatar)
-					</button>
-				</form>
 
-				@if (!string.IsNullOrWhiteSpace(Model.AvatarUrl))
-				{
-					<form asp-controller="Profile" asp-action="DeleteAvatar" method="post" class="mt-2">
-						@Html.AntiForgeryToken()
-						<button type="submit" class="btn btn-outline-danger btn-sm w-100">Xóa ảnh đại diện</button>
-					</form>
-				}
+					<h5 class="fw-bold mb-1">@Model.DisplayName</h5>
+					<p class="text-muted small mb-3">@Model.Email</p>
 
-				<hr class="my-3" />
+					<!-- QUẢN LÝ ẢNH ĐẠI DIỆN -->
+					<div class="border rounded-3 p-2 mb-3 text-start bg-light">
+						<div class="d-flex justify-content-between align-items-center mb-2">
+							<span class="small fw-semibold"><i class="bi bi-person-circle me-1 text-primary"></i>Ảnh đại diện</span>
+							<button type="button" class="btn btn-link btn-sm p-0 text-decoration-none" onclick="openProfileImagePreview('@avatarSrc', 'Ảnh đại diện của @Model.DisplayName')">
+								Xem ảnh
+							</button>
+						</div>
+						<form asp-controller="Profile" asp-action="UpdateAvatar" method="post" enctype="multipart/form-data">
+							@Html.AntiForgeryToken()
+							<input type="file" name="avatarFile" id="avatarFileInput" accept=".jpg,.jpeg,.png,.webp" class="form-control form-control-sm mb-2" required />
+							<button type="submit" class="btn btn-primary btn-sm w-100 fw-semibold" style="background-color:#0068ff;">
+								Cập nhật ảnh đại diện (Avatar)
+							</button>
+						</form>
+						@if (hasAvatar)
+						{
+							<form asp-controller="Profile" asp-action="DeleteAvatar" method="post" class="mt-2">
+								@Html.AntiForgeryToken()
+								<button type="submit" class="btn btn-outline-danger btn-sm w-100">Xóa ảnh đại diện</button>
+							</form>
+						}
+					</div>
 
-				<div class="d-grid gap-2">
-					<a asp-controller="Profile" asp-action="ChangePassword" class="btn btn-outline-secondary btn-sm">Đổi mật khẩu</a>
-					<a asp-controller="Home" asp-action="Index" class="btn btn-outline-primary btn-sm">Mở giao diện Chat 4 cột</a>
-					<form asp-controller="Account" asp-action="Logout" method="post">
-						@Html.AntiForgeryToken()
-						<button type="submit" class="btn btn-danger btn-sm w-100">Đăng xuất</button>
-					</form>
+					<!-- QUẢN LÝ ẢNH NỀN (COVER) -->
+					<div class="border rounded-3 p-2 mb-3 text-start bg-light">
+						<div class="d-flex justify-content-between align-items-center mb-2">
+							<span class="small fw-semibold"><i class="bi bi-image me-1 text-primary"></i>Ảnh nền</span>
+							@if (hasCover)
+							{
+								<button type="button" class="btn btn-link btn-sm p-0 text-decoration-none" onclick="openProfileImagePreview('@Model.CoverUrl', 'Ảnh nền của @Model.DisplayName')">
+									Xem ảnh
+								</button>
+							}
+						</div>
+						<form asp-controller="Profile" asp-action="UpdateCover" method="post" enctype="multipart/form-data">
+							@Html.AntiForgeryToken()
+							<input type="file" name="coverFile" id="coverFileInput" accept=".jpg,.jpeg,.png,.webp" class="form-control form-control-sm mb-2" required />
+							<button type="submit" class="btn btn-primary btn-sm w-100 fw-semibold" style="background-color:#0068ff;">
+								Cập nhật ảnh nền
+							</button>
+						</form>
+						@if (hasCover)
+						{
+							<form asp-controller="Profile" asp-action="DeleteCover" method="post" class="mt-2">
+								@Html.AntiForgeryToken()
+								<button type="submit" class="btn btn-outline-danger btn-sm w-100">Xóa ảnh nền</button>
+							</form>
+						}
+					</div>
+
+					<div class="d-grid gap-2">
+						<button type="button" class="btn btn-outline-secondary btn-sm" data-bs-toggle="modal" data-bs-target="#changePasswordModal">Đổi mật khẩu</button>
+						<form asp-controller="Account" asp-action="Logout" method="post">
+							@Html.AntiForgeryToken()
+							<button type="submit" class="btn btn-danger btn-sm w-100">Đăng xuất</button>
+						</form>
+					</div>
 				</div>
 			</div>
 		</div>
@@ -157,11 +240,170 @@
 					</div>
 				</form>
 			</div>
+
+		</div>
+	</div>
+</div>
+
+<!-- MODAL ĐỔI MẬT KHẨU (GỘP MẬT KHẨU CŨ & QUÊN MẬT KHẨU BẰNG OTP) -->
+<div class="modal fade" id="changePasswordModal" tabindex="-1" aria-hidden="true">
+	<div class="modal-dialog modal-dialog-centered">
+		<div class="modal-content border-0 rounded-4 shadow overflow-hidden">
+			<div class="modal-header border-bottom py-3 px-4">
+				<h5 class="modal-title fw-bold mb-0" style="color:#0068ff;">
+					<i class="bi bi-shield-lock me-1"></i>Đổi mật khẩu
+				</h5>
+				<button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Đóng"></button>
+			</div>
+			<div class="modal-body p-4">
+				<ul class="nav nav-pills nav-fill gap-2 mb-3 bg-light p-1 rounded-3" id="pwdModeTabs" role="tablist">
+					<li class="nav-item" role="presentation">
+						<button class="nav-link active py-2 small fw-semibold rounded-2" id="tab-old-pwd" data-bs-toggle="pill" data-bs-target="#pane-old-pwd" type="button" role="tab">
+							Dùng mật khẩu cũ
+						</button>
+					</li>
+					<li class="nav-item" role="presentation">
+						<button class="nav-link py-2 small fw-semibold rounded-2" id="tab-otp-pwd" data-bs-toggle="pill" data-bs-target="#pane-otp-pwd" type="button" role="tab">
+							Quên MK? Dùng OTP
+						</button>
+					</li>
+				</ul>
+
+				<div class="tab-content">
+					<!-- TAB 1: ĐỔI BẰNG MẬT KHẨU HIỆN TẠI -->
+					<div class="tab-pane fade show active" id="pane-old-pwd" role="tabpanel">
+						<form asp-controller="Profile" asp-action="ChangePassword" method="post">
+							@Html.AntiForgeryToken()
+							<input type="hidden" name="fromProfile" value="true" />
+
+							<div class="mb-3">
+								<label for="CurrentPassword" class="form-label small fw-semibold">Mật khẩu hiện tại <span class="text-danger">*</span></label>
+								<input type="password" id="CurrentPassword" name="CurrentPassword" class="form-control" placeholder="Nhập mật khẩu đang dùng" required />
+							</div>
+
+							<div class="mb-3">
+								<label for="NewPassword" class="form-label small fw-semibold">Mật khẩu mới <span class="text-danger">*</span></label>
+								<input type="password" id="NewPassword" name="NewPassword" class="form-control" placeholder="Tối thiểu 6 ký tự" minlength="6" required />
+							</div>
+
+							<div class="mb-3">
+								<label for="ConfirmNewPassword" class="form-label small fw-semibold">Xác nhận mật khẩu mới <span class="text-danger">*</span></label>
+								<input type="password" id="ConfirmNewPassword" name="ConfirmNewPassword" class="form-control" placeholder="Nhập lại mật khẩu mới" minlength="6" required />
+							</div>
+
+							<div class="small text-muted mb-3">
+								<i class="bi bi-info-circle me-1"></i>Các thiết bị khác sẽ tự động đăng xuất sau khi đổi mật khẩu.
+							</div>
+
+							<div class="d-flex justify-content-end gap-2">
+								<button type="button" class="btn btn-light px-3" data-bs-dismiss="modal">Hủy</button>
+								<button type="submit" class="btn btn-primary px-4 fw-semibold" style="background-color:#0068ff;">
+									Cập nhật mật khẩu
+								</button>
+							</div>
+						</form>
+					</div>
+
+					<!-- TAB 2: QUÊN MẬT KHẨU -> ĐỔI BẰNG OTP -->
+					<div class="tab-pane fade" id="pane-otp-pwd" role="tabpanel">
+						<div id="otpNoticeBox" class="alert alert-info small py-2 d-none mb-3"></div>
+
+						<form asp-controller="Profile" asp-action="ResetPasswordByOtp" method="post" id="otpResetForm">
+							@Html.AntiForgeryToken()
+
+							<div class="mb-3">
+								<label for="OtpCode" class="form-label small fw-semibold">Mã xác thực OTP (6 số) <span class="text-danger">*</span></label>
+								<div class="input-group">
+									<input type="text" id="OtpCode" name="otpCode" class="form-control" placeholder="Nhập 6 chữ số OTP" maxlength="6" required />
+									<button type="button" id="btnSendProfileOtp" class="btn btn-outline-primary fw-semibold" onclick="sendProfileOtp()">
+										Lấy mã OTP
+									</button>
+								</div>
+								<div class="form-text">Mã OTP có hiệu lực 10 phút, tối đa 5 lần nhập sai.</div>
+							</div>
+
+							<div class="mb-3">
+								<label for="OtpNewPassword" class="form-label small fw-semibold">Mật khẩu mới <span class="text-danger">*</span></label>
+								<input type="password" id="OtpNewPassword" name="newPassword" class="form-control" placeholder="Tối thiểu 6 ký tự" minlength="6" required />
+							</div>
+
+							<div class="mb-3">
+								<label for="OtpConfirmNewPassword" class="form-label small fw-semibold">Xác nhận mật khẩu mới <span class="text-danger">*</span></label>
+								<input type="password" id="OtpConfirmNewPassword" name="confirmNewPassword" class="form-control" placeholder="Nhập lại mật khẩu mới" minlength="6" required />
+							</div>
+
+							<div class="d-flex justify-content-end gap-2">
+								<button type="button" class="btn btn-light px-3" data-bs-dismiss="modal">Hủy</button>
+								<button type="submit" class="btn btn-primary px-4 fw-semibold" style="background-color:#0068ff;">
+									Đặt lại mật khẩu
+								</button>
+							</div>
+						</form>
+					</div>
+				</div>
+			</div>
+		</div>
+	</div>
+</div>
+
+<!-- MODAL XEM ẢNH PHÓNG TO (AVATAR & ẢNH NỀN) -->
+<div class="modal fade" id="profileImagePreviewModal" tabindex="-1" aria-hidden="true">
+	<div class="modal-dialog modal-dialog-centered modal-lg">
+		<div class="modal-content bg-dark text-white border-0 rounded-4 overflow-hidden">
+			<div class="modal-header border-secondary py-2">
+				<h6 class="modal-title mb-0" id="profileImagePreviewTitle">Xem ảnh</h6>
+				<button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Đóng"></button>
+			</div>
+			<div class="modal-body text-center p-3">
+				<img id="profileImagePreviewImg" src="" alt="Preview" class="img-fluid rounded-3" style="max-height: 75vh; object-fit: contain;" />
+				<p id="profileImageEmptyNote" class="text-secondary my-4 d-none">Bạn chưa đặt ảnh nền.</p>
+			</div>
 		</div>
 	</div>
 </div>
 
 <script>
+
+	async function sendProfileOtp() {
+		var btn = document.getElementById('btnSendProfileOtp');
+		var box = document.getElementById('otpNoticeBox');
+		var token = document.querySelector('#otpResetForm input[name="__RequestVerificationToken"]')?.value || '';
+		btn.disabled = true;
+		btn.textContent = 'Đang gửi...';
+		try {
+			var fd = new FormData();
+			fd.append('__RequestVerificationToken', token);
+			var res = await fetch('/Profile/SendChangePasswordOtp', { method: 'POST', body: fd });
+			var data = await res.json();
+			box.classList.remove('d-none', 'alert-info', 'alert-danger');
+			box.classList.add(data.success ? 'alert-info' : 'alert-danger');
+			box.textContent = data.message || (data.success ? 'Đã tạo mã OTP!' : 'Không thể tạo mã OTP.');
+		} catch (e) {
+			box.classList.remove('d-none', 'alert-info');
+			box.classList.add('alert-danger');
+			box.textContent = 'Lỗi kết nối khi yêu cầu mã OTP.';
+		} finally {
+			btn.disabled = false;
+			btn.textContent = 'Gửi lại OTP';
+		}
+	}
+
+	function openProfileImagePreview(url, title) {
+		var titleEl = document.getElementById('profileImagePreviewTitle');
+		var imgEl = document.getElementById('profileImagePreviewImg');
+		var emptyEl = document.getElementById('profileImageEmptyNote');
+		titleEl.textContent = title || 'Xem ảnh';
+		if (url) {
+			imgEl.src = url;
+			imgEl.classList.remove('d-none');
+			emptyEl.classList.add('d-none');
+		} else {
+			imgEl.classList.add('d-none');
+			emptyEl.classList.remove('d-none');
+		}
+		new bootstrap.Modal(document.getElementById('profileImagePreviewModal')).show();
+	}
+
 	setTimeout(function () {
 		document.querySelectorAll('.zalo-toast-item').forEach(function (el) {
 			el.style.transition = 'opacity 0.4s ease';

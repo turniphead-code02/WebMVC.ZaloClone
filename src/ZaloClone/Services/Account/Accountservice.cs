@@ -1,3 +1,4 @@
+#pragma warning disable IDE1006, IDE0290, IDE0305, IDE0028, IDE0031, IDE0057, CA1853, CA1862
 using System;
 using System.Collections.Concurrent;
 using System.Collections.Generic;
@@ -5,6 +6,7 @@ using System.ComponentModel.DataAnnotations;
 using System.IO;
 using System.Linq;
 using System.Security.Claims;
+using System.Security.Cryptography;
 using System.Text.Json;
 using System.Threading.Tasks;
 using Microsoft.AspNetCore.Authentication;
@@ -39,7 +41,15 @@ public interface IAccountService
 
 public class AccountService : IAccountService
 {
-    private static readonly ConcurrentDictionary<string, (string Otp, DateTimeOffset ExpiresAt)> _otpStore = new();
+    private sealed class OtpEntry
+    {
+        public string Otp { get; init; } = string.Empty;
+        public DateTimeOffset ExpiresAt { get; init; }
+        public int FailedAttempts { get; set; }
+    }
+
+    private const int _maxOtpAttempts = 5;
+    private static readonly ConcurrentDictionary<string, OtpEntry> _otpStore = new();
     private static readonly string[] _allowedExtensions = [".jpg", ".jpeg", ".png", ".webp"];
 
     private readonly AppDbContext _db;
@@ -198,8 +208,13 @@ public class AccountService : IAccountService
             return ApiResponse<string>.Fail("Không tìm thấy tài khoản nào khớp với Email hoặc Số điện thoại vừa nhập.");
         }
 
-        var otp = Random.Shared.Next(100000, 999999).ToString();
-        _otpStore[user.Email.ToLowerInvariant()] = (otp, DateTimeOffset.UtcNow.AddMinutes(10));
+        var otp = RandomNumberGenerator.GetInt32(100000, 1000000).ToString();
+        _otpStore[user.Email.ToLowerInvariant()] = new OtpEntry
+        {
+            Otp = otp,
+            ExpiresAt = DateTimeOffset.UtcNow.AddMinutes(10),
+            FailedAttempts = 0
+        };
 
         return ApiResponse<string>.Ok(user.Email, $"Mã xác thực OTP của tài khoản {user.Email} là: {otp} (Hiệu lực 10 phút).");
     }
@@ -207,11 +222,45 @@ public class AccountService : IAccountService
     public async Task<ApiResponse> ResetPasswordWithOtpAsync(ResetPasswordViewModel model)
     {
         var email = model.Email.Trim().ToLowerInvariant();
-        if (!_otpStore.TryGetValue(email, out var entry) ||
-            entry.ExpiresAt < DateTimeOffset.UtcNow ||
-            entry.Otp != model.OtpCode.Trim())
+        if (!_otpStore.TryGetValue(email, out var entry))
         {
-            return ApiResponse.Fail("Mã xác thực OTP không chính xác hoặc đã hết hạn.");
+            return ApiResponse.Fail("Mã xác thực OTP không tồn tại hoặc đã hết hạn. Vui lòng yêu cầu mã mới.");
+        }
+
+        if (entry.ExpiresAt < DateTimeOffset.UtcNow)
+        {
+            _otpStore.TryRemove(email, out _);
+            return ApiResponse.Fail("Mã xác thực OTP đã hết hạn. Vui lòng yêu cầu mã mới.");
+        }
+
+        int currentAttempts;
+        bool isMatch;
+        lock (entry)
+        {
+            if (entry.FailedAttempts >= _maxOtpAttempts)
+            {
+                _otpStore.TryRemove(email, out _);
+                return ApiResponse.Fail($"Bạn đã nhập sai mã OTP quá {_maxOtpAttempts} lần. Mã OTP đã bị hủy, vui lòng yêu cầu mã mới.");
+            }
+
+            isMatch = string.Equals(entry.Otp, model.OtpCode.Trim(), StringComparison.Ordinal);
+            if (!isMatch)
+            {
+                entry.FailedAttempts++;
+            }
+
+            currentAttempts = entry.FailedAttempts;
+        }
+
+        if (!isMatch)
+        {
+            if (currentAttempts >= _maxOtpAttempts)
+            {
+                _otpStore.TryRemove(email, out _);
+                return ApiResponse.Fail($"Bạn đã nhập sai mã OTP quá {_maxOtpAttempts} lần. Mã OTP đã bị vô hiệu hóa, vui lòng yêu cầu mã mới.");
+            }
+
+            return ApiResponse.Fail($"Mã xác thực OTP không chính xác. Bạn còn {_maxOtpAttempts - currentAttempts} lần thử.");
         }
 
         var user = await _db.Users.FirstOrDefaultAsync(u => !u.IsDeleted && u.Email.ToLower() == email);
