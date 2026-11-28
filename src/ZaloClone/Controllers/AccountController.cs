@@ -12,6 +12,7 @@ using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
+using Microsoft.AspNetCore.RateLimiting;
 using ZaloClone.Data;
 using ZaloClone.Infrastructure;
 using ZaloClone.Models.Entities;
@@ -24,6 +25,7 @@ namespace ZaloClone.Controllers;
 /// Đặt tại: src/ZaloClone/Controllers/AccountController.cs
 /// Phụ trách: Đăng ký, Đăng nhập, Đăng xuất, Quên mật khẩu (OTP), Từ chối truy cập, Kiểm tra SecurityStamp, Quick Login (Dev).
 /// </summary>
+[EnableRateLimiting("AuthPolicy")]
 public class AccountController : Controller
 {
     private readonly AppDbContext _db;

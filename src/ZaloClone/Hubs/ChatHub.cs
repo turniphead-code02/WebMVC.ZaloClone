@@ -196,6 +196,95 @@ public class ChatHub : Hub
         }
     }
 
+    // ==================== WEBRTC VOICE CALL SIGNALING ====================
+
+    public async Task CallUser(Guid conversationId)
+    {
+        var callerId = Context.User.GetUserId();
+        if (callerId == Guid.Empty) return;
+
+        var peerIds = await _dbContext.ConversationMembers
+            .Where(m => m.ConversationId == conversationId && m.LeftAt == null && m.UserId != callerId)
+            .Select(m => m.UserId)
+            .ToListAsync();
+
+        if (peerIds.Count == 0) return;
+
+        await Clients.Groups(peerIds.Select(GetUserGroupName).ToList()).SendAsync("IncomingCall", new
+        {
+            conversationId,
+            callerId,
+            callerName = Context.User.GetDisplayName()
+        });
+    }
+
+    public async Task AcceptCall(Guid conversationId, Guid callerId)
+    {
+        var accepterId = Context.User.GetUserId();
+        if (accepterId == Guid.Empty) return;
+
+        await Clients.Group(GetUserGroupName(callerId)).SendAsync("CallAccepted", new
+        {
+            conversationId,
+            accepterId,
+            accepterName = Context.User.GetDisplayName()
+        });
+    }
+
+    public async Task RejectCall(Guid conversationId, Guid callerId, string? reason = null)
+    {
+        var rejecterId = Context.User.GetUserId();
+        if (rejecterId == Guid.Empty) return;
+
+        await Clients.Group(GetUserGroupName(callerId)).SendAsync("CallRejected", new
+        {
+            conversationId,
+            rejecterId,
+            reason = reason ?? "Người nhận đã từ chối cuộc gọi."
+        });
+    }
+
+    public async Task EndCall(Guid conversationId)
+    {
+        var userId = Context.User.GetUserId();
+        if (userId == Guid.Empty) return;
+
+        var peerIds = await _dbContext.ConversationMembers
+            .Where(m => m.ConversationId == conversationId && m.LeftAt == null && m.UserId != userId)
+            .Select(m => m.UserId)
+            .ToListAsync();
+
+        if (peerIds.Count > 0)
+        {
+            await Clients.Groups(peerIds.Select(GetUserGroupName).ToList()).SendAsync("CallEnded", new
+            {
+                conversationId,
+                endedBy = userId
+            });
+        }
+    }
+
+    public async Task SendWebRtcSignal(Guid conversationId, string signalJson)
+    {
+        var userId = Context.User.GetUserId();
+        if (userId == Guid.Empty || string.IsNullOrWhiteSpace(signalJson)) return;
+
+        var peerIds = await _dbContext.ConversationMembers
+            .Where(m => m.ConversationId == conversationId && m.LeftAt == null && m.UserId != userId)
+            .Select(m => m.UserId)
+            .ToListAsync();
+
+        if (peerIds.Count > 0)
+        {
+            await Clients.Groups(peerIds.Select(GetUserGroupName).ToList()).SendAsync("ReceiveWebRtcSignal", new
+            {
+                conversationId,
+                senderId = userId,
+                signalJson
+            });
+        }
+    }
+
     public static string GetUserGroupName(Guid userId) => $"user:{userId}";
     public static string GetConversationGroupName(Guid conversationId) => $"conv:{conversationId}";
 }

@@ -1015,6 +1015,209 @@ document.addEventListener("DOMContentLoaded", function () {
         return clean.toLowerCase().startsWith("uploads/") ? `/${clean}` : `/uploads/${clean}`;
     }
 
+    // 8. CUỘC GỌI THOẠI WEBRTC REAL-TIME QUA SIGNALR
+    const btnStartCall = document.getElementById("btnStartCall");
+    const callModalEl = document.getElementById("callModal");
+    const callPeerName = document.getElementById("callPeerName");
+    const callStatusText = document.getElementById("callStatusText");
+    const callTimerEl = document.getElementById("callTimer");
+    const callControlsIncoming = document.getElementById("callControlsIncoming");
+    const callControlsActive = document.getElementById("callControlsActive");
+    const btnAcceptCall = document.getElementById("btnAcceptCall");
+    const btnRejectCall = document.getElementById("btnRejectCall");
+    const btnEndCall = document.getElementById("btnEndCall");
+    const btnToggleMute = document.getElementById("btnToggleMute");
+    const remoteAudio = document.getElementById("remoteAudio");
+
+    let callModal = callModalEl && window.bootstrap ? new bootstrap.Modal(callModalEl) : null;
+    let peerConnection = null;
+    let localStream = null;
+    let callConvId = null;
+    let incomingCallerId = null;
+    let callTimerInterval = null;
+    let callSeconds = 0;
+    let isMuted = false;
+
+    function startCallTimer() {
+        stopCallTimer();
+        callSeconds = 0;
+        if (callTimerEl) {
+            callTimerEl.textContent = "00:00";
+            callTimerEl.classList.remove("d-none");
+        }
+        callTimerInterval = setInterval(() => {
+            callSeconds++;
+            const mins = String(Math.floor(callSeconds / 60)).padStart(2, "0");
+            const secs = String(callSeconds % 60).padStart(2, "0");
+            if (callTimerEl) callTimerEl.textContent = `${mins}:${secs}`;
+        }, 1000);
+    }
+
+    function stopCallTimer() {
+        if (callTimerInterval) {
+            clearInterval(callTimerInterval);
+            callTimerInterval = null;
+        }
+        if (callTimerEl) callTimerEl.classList.add("d-none");
+    }
+
+    async function createPeerConnection(targetConvId) {
+        const pc = new RTCPeerConnection({
+            iceServers: [{ urls: "stun:stun.l.google.com:19302" }]
+        });
+
+        pc.onicecandidate = (e) => {
+            if (e.candidate) {
+                connection.invoke("SendWebRtcSignal", targetConvId, JSON.stringify({ candidate: e.candidate })).catch(() => {});
+            }
+        };
+
+        pc.ontrack = (e) => {
+            if (remoteAudio && e.streams && e.streams[0]) {
+                remoteAudio.srcObject = e.streams[0];
+            }
+        };
+
+        try {
+            localStream = await navigator.mediaDevices.getUserMedia({ audio: true, video: false });
+            localStream.getTracks().forEach(track => pc.addTrack(track, localStream));
+        } catch (err) {
+            throw new Error("Không thể truy cập Microphone trên thiết bị này.");
+        }
+
+        return pc;
+    }
+
+    function cleanupCall() {
+        stopCallTimer();
+        if (peerConnection) {
+            peerConnection.close();
+            peerConnection = null;
+        }
+        if (localStream) {
+            localStream.getTracks().forEach(t => t.stop());
+            localStream = null;
+        }
+        if (remoteAudio) remoteAudio.srcObject = null;
+        callConvId = null;
+        incomingCallerId = null;
+        isMuted = false;
+        if (btnToggleMute) btnToggleMute.innerHTML = `<i class="bi bi-mic-fill"></i>`;
+        if (callModal) callModal.hide();
+    }
+
+    function showCallUi(peerName, statusText, isIncoming) {
+        if (callPeerName) callPeerName.textContent = peerName || "Cuộc gọi";
+        if (callStatusText) callStatusText.textContent = statusText;
+        if (callControlsIncoming) callControlsIncoming.style.setProperty("display", isIncoming ? "flex" : "none", "important");
+        if (callControlsActive) callControlsActive.style.setProperty("display", isIncoming ? "none" : "flex", "important");
+        if (callModal) callModal.show();
+    }
+
+    if (btnStartCall) {
+        btnStartCall.addEventListener("click", async function () {
+            if (!activeConvId) return;
+            if (connection.state !== signalR.HubConnectionState.Connected) {
+                alert("Chưa kết nối tới máy chủ SignalR.");
+                return;
+            }
+            callConvId = activeConvId;
+            const headerName = document.getElementById("chatHeaderName")?.textContent || "Cuộc gọi";
+            showCallUi(headerName, "Đang đổ chuông...", false);
+            try {
+                peerConnection = await createPeerConnection(callConvId);
+                await connection.invoke("CallUser", callConvId);
+            } catch (err) {
+                alert(err.message || "Không thể bắt đầu cuộc gọi.");
+                cleanupCall();
+            }
+        });
+    }
+
+    connection.on("IncomingCall", function (data) {
+        if (peerConnection) return; // Đang bận
+        callConvId = data.conversationId;
+        incomingCallerId = data.callerId;
+        showCallUi(data.callerName || "Cuộc gọi đến", "Cuộc gọi thoại đến...", true);
+    });
+
+    if (btnAcceptCall) {
+        btnAcceptCall.addEventListener("click", async function () {
+            if (!callConvId || !incomingCallerId) return;
+            showCallUi(callPeerName?.textContent, "Đang kết nối âm thanh...", false);
+            try {
+                peerConnection = await createPeerConnection(callConvId);
+                await connection.invoke("AcceptCall", callConvId, incomingCallerId);
+            } catch (err) {
+                alert(err.message || "Không thể nghe máy.");
+                await connection.invoke("RejectCall", callConvId, incomingCallerId, "Thiết bị không có Microphone.").catch(() => {});
+                cleanupCall();
+            }
+        });
+    }
+
+    if (btnRejectCall) {
+        btnRejectCall.addEventListener("click", async function () {
+            if (callConvId && incomingCallerId) {
+                await connection.invoke("RejectCall", callConvId, incomingCallerId, "Người nhận từ chối cuộc gọi.").catch(() => {});
+            }
+            cleanupCall();
+        });
+    }
+
+    if (btnEndCall) {
+        btnEndCall.addEventListener("click", async function () {
+            if (callConvId) {
+                await connection.invoke("EndCall", callConvId).catch(() => {});
+            }
+            cleanupCall();
+        });
+    }
+
+    if (btnToggleMute) {
+        btnToggleMute.addEventListener("click", function () {
+            if (!localStream) return;
+            isMuted = !isMuted;
+            localStream.getAudioTracks().forEach(t => { t.enabled = !isMuted; });
+            this.innerHTML = isMuted ? `<i class="bi bi-mic-mute-fill text-danger"></i>` : `<i class="bi bi-mic-fill"></i>`;
+        });
+    }
+
+    connection.on("CallAccepted", async function (data) {
+        if (!peerConnection || data.conversationId !== callConvId) return;
+        if (callStatusText) callStatusText.textContent = "Đang trò chuyện";
+        startCallTimer();
+        const offer = await peerConnection.createOffer();
+        await peerConnection.setLocalDescription(offer);
+        await connection.invoke("SendWebRtcSignal", callConvId, JSON.stringify({ sdp: offer }));
+    });
+
+    connection.on("CallRejected", function (data) {
+        alert(data.reason || "Cuộc gọi bị từ chối.");
+        cleanupCall();
+    });
+
+    connection.on("CallEnded", function () {
+        cleanupCall();
+    });
+
+    connection.on("ReceiveWebRtcSignal", async function (data) {
+        if (!peerConnection || data.conversationId !== callConvId) return;
+        const signal = JSON.parse(data.signalJson);
+        if (signal.sdp) {
+            await peerConnection.setRemoteDescription(new RTCSessionDescription(signal.sdp));
+            if (signal.sdp.type === "offer") {
+                const answer = await peerConnection.createAnswer();
+                await peerConnection.setLocalDescription(answer);
+                await connection.invoke("SendWebRtcSignal", callConvId, JSON.stringify({ sdp: answer }));
+                if (callStatusText) callStatusText.textContent = "Đang trò chuyện";
+                startCallTimer();
+            }
+        } else if (signal.candidate) {
+            await peerConnection.addIceCandidate(new RTCIceCandidate(signal.candidate)).catch(() => {});
+        }
+    });
+
     function escapeHtml(str) {
         if (!str) return "";
         const div = document.createElement("div");

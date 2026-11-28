@@ -205,7 +205,7 @@
 						</div>
 					</div>
 					<div class="header-actions">
-						<button class="btn-call" type="button" title="Bắt đầu cuộc gọi">
+						<button class="btn-call" id="btnStartCall" type="button" title="Bắt đầu cuộc gọi thoại WebRTC">
 							<i class="bi bi-telephone-fill"></i>
 							<span>Call</span>
 						</button>
@@ -421,6 +421,37 @@
 				<div class="modal-footer border-top-0 pt-0">
 					<button type="button" class="btn btn-light rounded-pill px-3" data-bs-dismiss="modal">Hủy</button>
 					<button type="button" id="btnSubmitAddMembers" class="btn btn-primary rounded-pill px-4">Thêm vào nhóm</button>
+				</div>
+			</div>
+		</div>
+	</div>
+
+	<!-- MODAL CUỘC GỌI THOẠI WEBRTC -->
+	<div class="modal fade" id="callModal" data-bs-backdrop="static" data-bs-keyboard="false" tabindex="-1" aria-hidden="true">
+		<div class="modal-dialog modal-dialog-centered modal-sm">
+			<div class="modal-content rounded-4 border-0 shadow-lg text-center p-4">
+				<div class="mx-auto mb-3 rounded-circle d-flex align-items-center justify-content-center fw-bold fs-2 text-white" style="width: 72px; height: 72px; background: linear-gradient(135deg, #5551ff, #0068ff);">
+					<i class="bi bi-telephone-fill"></i>
+				</div>
+				<h5 class="fw-bold mb-1" id="callPeerName">Đang gọi...</h5>
+				<p class="text-muted small mb-3" id="callStatusText">Đang kết nối...</p>
+				<div class="fw-semibold text-primary mb-3 d-none" id="callTimer">00:00</div>
+				<audio id="remoteAudio" autoplay playsinline></audio>
+				<div class="d-flex justify-content-center gap-3 mt-2" id="callControlsIncoming" style="display: none !important;">
+					<button type="button" id="btnRejectCall" class="btn btn-danger rounded-circle" style="width: 48px; height: 48px;" title="Từ chối">
+						<i class="bi bi-telephone-x-fill"></i>
+					</button>
+					<button type="button" id="btnAcceptCall" class="btn btn-success rounded-circle" style="width: 48px; height: 48px;" title="Nghe máy">
+						<i class="bi bi-telephone-fill"></i>
+					</button>
+				</div>
+				<div class="d-flex justify-content-center gap-3 mt-2" id="callControlsActive">
+					<button type="button" id="btnToggleMute" class="btn btn-light border rounded-circle" style="width: 48px; height: 48px;" title="Tắt/Bật mic">
+						<i class="bi bi-mic-fill"></i>
+					</button>
+					<button type="button" id="btnEndCall" class="btn btn-danger rounded-circle" style="width: 48px; height: 48px;" title="Kết thúc">
+						<i class="bi bi-telephone-x-fill"></i>
+					</button>
 				</div>
 			</div>
 		</div>

@@ -16,8 +16,16 @@ using ZaloClone.Services.Storage;
 var builder = WebApplication.CreateBuilder(args);
 
 // 1. Cấu hình Database (PostgreSQL + Snake Case)
-var connectionString = builder.Configuration.GetConnectionString("Default")
-    ?? "Host=localhost;Port=5432;Database=ZaloCloneDb;Username=postgres;Password=YourSecurePassword2026";
+var connectionString = builder.Configuration.GetConnectionString("Default");
+if (string.IsNullOrWhiteSpace(connectionString))
+{
+    if (!builder.Environment.IsDevelopment())
+    {
+        throw new InvalidOperationException("ConnectionStrings:Default chưa được cấu hình.");
+    }
+
+    connectionString = "Host=localhost;Port=5432;Database=ZaloCloneDb;Username=postgres;Password=YourSecurePassword2026";
+}
 
 builder.Services.AddDbContext<AppDbContext>(options =>
 {
@@ -89,7 +97,20 @@ builder.Services.AddScoped<IGroupService, GroupService>();
 // 4. SignalR Real-time
 builder.Services.AddSignalR();
 
-// 5. MVC Views & Controllers + Giới hạn upload file 55 MB (cho phép file tối đa 50 MB)
+// 5. Rate Limiting chống brute-force + MVC Views & Controllers + Giới hạn upload file 55 MB
+builder.Services.AddRateLimiter(options =>
+{
+    options.RejectionStatusCode = StatusCodes.Status429TooManyRequests;
+    options.AddPolicy("AuthPolicy", context =>
+        System.Threading.RateLimiting.RateLimitPartition.GetFixedWindowLimiter(
+            partitionKey: context.Connection.RemoteIpAddress?.ToString() ?? "unknown",
+            factory: _ => new System.Threading.RateLimiting.FixedWindowRateLimiterOptions
+            {
+                PermitLimit = 60,
+                Window = TimeSpan.FromMinutes(1),
+                QueueLimit = 0
+            }));
+});
 builder.Services.Configure<Microsoft.AspNetCore.Http.Features.FormOptions>(options =>
 {
     options.MultipartBodyLengthLimit = 55L * 1024 * 1024;
@@ -108,6 +129,23 @@ if (app.Environment.IsDevelopment())
     try
     {
         await SeedData.InitializeAsync(app.Services);
+        var sampleDir = Path.Combine(app.Environment.ContentRootPath, "App_Data", "uploads", "samples");
+        Directory.CreateDirectory(sampleDir);
+        var sampleFiles = new[]
+        {
+            ("DacTa_KienTruc_ZaloClone.pdf", "%PDF-1.4\n% ZaloClone Architecture Spec Sample\n"),
+            ("ThietKe_UI_ZaloWeb.png", "PNG Sample Placeholder - ZaloClone UI\n"),
+            ("HuongDan_CaiDat_MoiTruong.docx", "ZaloClone Environment Setup Guide\n"),
+            ("SourceCode_Config_Docker.zip", "ZaloClone Docker Config Archive\n")
+        };
+        foreach (var (name, content) in sampleFiles)
+        {
+            var path = Path.Combine(sampleDir, name);
+            if (!File.Exists(path))
+            {
+                await File.WriteAllTextAsync(path, content);
+            }
+        }
     }
     catch (Exception ex)
     {
@@ -121,8 +159,16 @@ else
 }
 
 app.UseHttpsRedirection();
-app.UseStaticFiles(); // Đảm bảo phục vụ file upload trong wwwroot/uploads
+app.Use(async (context, next) =>
+{
+    context.Response.Headers["X-Content-Type-Options"] = "nosniff";
+    context.Response.Headers["X-Frame-Options"] = "SAMEORIGIN";
+    context.Response.Headers["Referrer-Policy"] = "strict-origin-when-cross-origin";
+    await next();
+});
+app.UseStaticFiles(); // Đảm bảo phục vụ file upload avatar/nhóm trong wwwroot/uploads
 app.UseRouting();
+app.UseRateLimiter();
 
 app.UseAuthentication();
 app.UseAuthorization();

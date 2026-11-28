@@ -94,6 +94,12 @@ public class LocalFileStorageService : IFileStorageService
             return Path.Combine(_environment.ContentRootPath, "App_Data", "uploads", subPath);
         }
 
+        if (cleanKey.StartsWith("samples/", StringComparison.OrdinalIgnoreCase))
+        {
+            var subPath = cleanKey.Replace('/', Path.DirectorySeparatorChar);
+            return Path.Combine(_environment.ContentRootPath, "App_Data", "uploads", subPath);
+        }
+
         var normalizedKey = cleanKey.Replace('/', Path.DirectorySeparatorChar);
         return Path.Combine(_environment.WebRootPath, normalizedKey);
     }

@@ -58,17 +58,20 @@ public class AccountService : IAccountService
     private readonly IPasswordHasher<User> _passwordHasher;
     private readonly IFileStorageService _fileStorageService;
     private readonly IWebHostEnvironment _env;
+    private readonly IConfiguration? _configuration;
 
     public AccountService(
         AppDbContext db,
         IPasswordHasher<User> passwordHasher,
         IFileStorageService fileStorageService,
-        IWebHostEnvironment env)
+        IWebHostEnvironment env,
+        IConfiguration? configuration = null)
     {
         _db = db;
         _passwordHasher = passwordHasher;
         _fileStorageService = fileStorageService;
         _env = env;
+        _configuration = configuration;
     }
 
     public async Task<ApiResponse<User>> RegisterAsync(RegisterViewModel model)
@@ -230,9 +233,60 @@ public class AccountService : IAccountService
             ExpiresAt = now.AddMinutes(10),
             FailedAttempts = 0
         };
-        Console.WriteLine($"[OTP] Email: {user.Email} | Code: {otp} | ExpiresAt: {now.AddMinutes(10):O}");
 
-        return ApiResponse<string>.Ok(user.Email, $"Mã xác thực OTP của tài khoản {user.Email} là: {otp} (Hiệu lực 10 phút).");
+        var smtpHost = _configuration?["Email:SmtpHost"];
+        if (!string.IsNullOrWhiteSpace(smtpHost))
+        {
+            try
+            {
+                var smtpPort = int.TryParse(_configuration?["Email:SmtpPort"], out var p) ? p : 587;
+                var smtpUser = _configuration?["Email:SmtpUser"] ?? string.Empty;
+                var smtpPass = _configuration?["Email:SmtpPass"] ?? string.Empty;
+                var fromEmail = _configuration?["Email:FromEmail"] ?? "no-reply@zaloclone.local";
+                var fromName = _configuration?["Email:FromName"] ?? "ZaloClone";
+                var enableSsl = !bool.TryParse(_configuration?["Email:EnableSsl"], out var ssl) || ssl;
+
+                using var client = new System.Net.Mail.SmtpClient(smtpHost, smtpPort)
+                {
+                    EnableSsl = enableSsl,
+                    Credentials = string.IsNullOrWhiteSpace(smtpUser)
+                        ? System.Net.CredentialCache.DefaultNetworkCredentials
+                        : new System.Net.NetworkCredential(smtpUser, smtpPass)
+                };
+
+                using var mail = new System.Net.Mail.MailMessage
+                {
+                    From = new System.Net.Mail.MailAddress(fromEmail, fromName),
+                    Subject = "[ZaloClone] Mã xác thực đặt lại mật khẩu (OTP)",
+                    Body = $"<p>Xin chào <strong>{System.Net.WebUtility.HtmlEncode(user.DisplayName)}</strong>,</p>"
+                         + $"<p>Mã OTP đặt lại mật khẩu của bạn là: <strong style='font-size:20px;color:#0068ff;'>{otp}</strong></p>"
+                         + "<p>Mã có hiệu lực trong <strong>10 phút</strong>. Nếu bạn không yêu cầu thao tác này, vui lòng bỏ qua email.</p>",
+                    IsBodyHtml = true
+                };
+                mail.To.Add(user.Email);
+                await client.SendMailAsync(mail);
+
+                return ApiResponse<string>.Ok(user.Email, $"Mã xác thực OTP đã được gửi đến email {user.Email} (Hiệu lực 10 phút).");
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"[OTP][SMTP Error] {ex.Message}");
+                if (!_env.IsDevelopment() && !_env.IsEnvironment("Testing"))
+                {
+                    _otpStore.TryRemove(emailKey, out _);
+                    return ApiResponse<string>.Fail("Không thể gửi email OTP lúc này. Vui lòng thử lại sau.");
+                }
+            }
+        }
+
+        if (_env.IsDevelopment() || _env.IsEnvironment("Testing"))
+        {
+            Console.WriteLine($"[OTP] Email: {user.Email} | Code: {otp} | ExpiresAt: {now.AddMinutes(10):O}");
+            return ApiResponse<string>.Ok(user.Email, $"Mã xác thực OTP của tài khoản {user.Email} là: {otp} (Hiệu lực 10 phút).");
+        }
+
+        _otpStore.TryRemove(emailKey, out _);
+        return ApiResponse<string>.Fail("Hệ thống gửi Email chưa được cấu hình trên môi trường Production.");
     }
 
     public async Task<ApiResponse> ResetPasswordWithOtpAsync(ResetPasswordViewModel model)
