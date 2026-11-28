@@ -29,7 +29,7 @@ if (string.IsNullOrWhiteSpace(connectionString))
         var dbPort = uri.Port > 0 ? uri.Port : 5432;
         var dbName = uri.AbsolutePath.TrimStart('/');
         connectionString =
-            $"Host={uri.Host};Port={dbPort};Database={dbName};Username={Uri.UnescapeDataString(userInfo[0])};Password={Uri.UnescapeDataString(userInfo.Length > 1 ? userInfo[1] : "")};SSL Mode=Require;Trust Server Certificate=true";
+            $"Host={uri.Host};Port={dbPort};Database={dbName};Username={Uri.UnescapeDataString(userInfo[0])};Password={Uri.UnescapeDataString(userInfo.Length > 1 ? userInfo[1] : "")};SSL Mode=Prefer;Trust Server Certificate=true";
     }
     else if (builder.Environment.IsDevelopment())
     {
@@ -216,6 +216,9 @@ app.MapControllerRoute(
     name: "default",
     pattern: "{controller=Home}/{action=Index}/{id?}")
     .WithStaticAssets();
+
+// Health check cho Render / Railway
+app.MapGet("/health", () => Results.Ok("OK")).AllowAnonymous();
 
 // Endpoint SignalR
 app.MapHub<ChatHub>("/chathub");
