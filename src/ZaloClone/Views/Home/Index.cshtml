@@ -86,7 +86,14 @@
 			<!-- Profile & Logout Bottom -->
 			<div class="user-profile-menu">
 				<a href="/Profile" class="avatar-mini text-decoration-none" title="@Model.CurrentUser.DisplayName (Trang cá nhân)">
-					@(Model.CurrentUser.DisplayName.Length > 0 ? Model.CurrentUser.DisplayName.Substring(0, 1) : "U")
+					@if (!string.IsNullOrWhiteSpace(Model.CurrentUser.AvatarUrl))
+					{
+						<img src="@Model.CurrentUser.AvatarUrl" alt="@Model.CurrentUser.DisplayName" class="avatar-img" />
+					}
+					else
+					{
+						@(Model.CurrentUser.DisplayName.Length > 0 ? Model.CurrentUser.DisplayName.Substring(0, 1) : "U")
+					}
 				</a>
 				<a href="/Account/Logout" class="nav-item-btn text-danger" title="Đăng xuất">
 					<i class="bi bi-box-arrow-right"></i>
@@ -123,20 +130,29 @@
 					@foreach (var conv in Model.Conversations)
 					{
 						var initial = !string.IsNullOrEmpty(conv.Title) ? conv.Title.Substring(0, 1) : "Z";
-						<a href="?conversationId=@conv.Id" class="conv-item @(conv.IsActive ? "active" : "")" data-id="@conv.Id">
+						<a href="?conversationId=@conv.Id" class="conv-item @(conv.IsActive ? "active" : "")" data-id="@conv.Id" data-other-user-id="@(conv.OtherUserId?.ToString() ?? "")">
 							<div class="conv-avatar-wrap">
-								<div class="conv-avatar">@initial</div>
-								@if (conv.IsOnline)
-								{
-									<span class="online-indicator"></span>
-								}
+								<div class="conv-avatar">
+									@if (!string.IsNullOrWhiteSpace(conv.AvatarUrl))
+									{
+										<img src="@conv.AvatarUrl" alt="@conv.Title" class="avatar-img" />
+									}
+									else
+									{
+										@initial
+									}
+								</div>
+								<span class="online-indicator @(conv.IsOnline ? "" : "d-none")"></span>
 							</div>
 							<div class="conv-info">
 								<div class="conv-info-top">
 									<span class="conv-name">@conv.Title</span>
 									<span class="conv-time">@conv.FormattedTime</span>
 								</div>
-								<div class="conv-preview">@conv.LastMessageContent</div>
+								<div class="d-flex align-items-center justify-content-between gap-2">
+									<div class="conv-preview mb-1">@conv.LastMessageContent</div>
+									<span class="unread-badge @(conv.UnreadCount > 0 ? "" : "d-none")" data-unread="@conv.UnreadCount">@conv.UnreadCount</span>
+								</div>
 								<div class="conv-tags">
 									<span class="conv-tag tag-@conv.TagColor">@conv.TagText</span>
 								</div>
@@ -162,8 +178,15 @@
 				<!-- Header -->
 				<header class="chat-header">
 					<div class="user-meta">
-						<div class="avatar-chat">
-							@(!string.IsNullOrEmpty(activeConv.Title) ? activeConv.Title.Substring(0, 1) : "C")
+						<div class="avatar-chat" id="chatHeaderAvatar">
+							@if (!string.IsNullOrWhiteSpace(activeConv.AvatarUrl))
+							{
+								<img src="@activeConv.AvatarUrl" alt="@activeConv.Title" class="avatar-img" />
+							}
+							else
+							{
+								@(!string.IsNullOrEmpty(activeConv.Title) ? activeConv.Title.Substring(0, 1) : "C")
+							}
 						</div>
 						<div class="name-status">
 							<div class="d-flex align-items-center gap-2">
@@ -175,9 +198,9 @@
 									</button>
 								}
 							</div>
-							<div class="status-badge">
+							<div class="status-badge @(activeConv.IsOnline ? "" : "offline")" id="chatHeaderStatus" data-other-user-id="@(activeConv.OtherUserId?.ToString() ?? "")">
 								<span class="dot"></span>
-								<span>Online</span>
+								<span>@(activeConv.IsOnline ? "Online" : "Offline")</span>
 							</div>
 						</div>
 					</div>
@@ -200,7 +223,16 @@
 						{
 							var msgInitial = !string.IsNullOrEmpty(msg.SenderName) ? msg.SenderName.Substring(0, 1) : "U";
 							<div class="msg-row @(msg.IsSelf ? "outgoing" : "incoming")">
-								<div class="msg-avatar" title="@msg.SenderName">@msgInitial</div>
+								<div class="msg-avatar" title="@msg.SenderName">
+									@if (!string.IsNullOrWhiteSpace(msg.SenderAvatar))
+									{
+										<img src="@msg.SenderAvatar" alt="@msg.SenderName" class="avatar-img" />
+									}
+									else
+									{
+										@msgInitial
+									}
+								</div>
 								<div class="msg-bubble-wrap">
 									@if (!msg.IsSelf)
 									{
@@ -217,6 +249,9 @@
 						<div class="text-center text-muted py-5">Chưa có tin nhắn nào. Hãy gửi lời chào nhé! 👋</div>
 					}
 				</div>
+
+				<!-- Typing indicator -->
+				<div id="typingIndicator" class="typing-indicator-bar d-none"></div>
 
 				<!-- Input bar -->
 				<footer class="chat-input-bar">
@@ -252,9 +287,14 @@
 
 			<!-- Team Members -->
 			<div class="directory-section">
-				<div class="section-title-wrap">
-					<h6 class="section-title">Team Members</h6>
-					<span class="section-badge" id="directoryMemberCount">@(activeConv?.Members.Count ?? 0)</span>
+				<div class="section-title-wrap justify-content-between">
+					<div class="d-flex align-items-center gap-2">
+						<h6 class="section-title">Team Members</h6>
+						<span class="section-badge" id="directoryMemberCount">@(activeConv?.Members.Count ?? 0)</span>
+					</div>
+					<button type="button" id="btnOpenAddMembers" class="btn btn-sm btn-outline-primary rounded-pill py-0 px-2 @(activeConv?.IsGroup == true ? "" : "d-none")" data-bs-toggle="modal" data-bs-target="#addGroupMembersModal" title="Thêm thành viên vào nhóm">
+						<i class="bi bi-person-plus"></i> Thêm
+					</button>
 				</div>
 				<div class="member-list" id="directoryMemberList">
 					@if (activeConv?.Members.Any() == true)
@@ -262,12 +302,29 @@
 						@foreach (var m in activeConv.Members)
 						{
 							var mInitial = !string.IsNullOrEmpty(m.DisplayName) ? m.DisplayName.Substring(0, 1) : "U";
-							<div class="member-item">
-								<div class="member-avatar">@mInitial</div>
-								<div class="member-details">
-									<h6>@m.DisplayName</h6>
-									<p>@m.Bio</p>
+							<div class="member-item justify-content-between">
+								<div class="d-flex align-items-center gap-2 min-width-0">
+									<div class="member-avatar flex-shrink-0">
+										@if (!string.IsNullOrWhiteSpace(m.AvatarUrl))
+										{
+											<img src="@m.AvatarUrl" alt="@m.DisplayName" class="avatar-img" />
+										}
+										else
+										{
+											@mInitial
+										}
+									</div>
+									<div class="member-details text-truncate">
+										<h6 class="text-truncate">@m.DisplayName</h6>
+										<p class="text-truncate">@(m.Role == "Admin" ? "Trưởng nhóm" : m.Bio)</p>
+									</div>
 								</div>
+								@if (activeConv.IsGroup && activeConv.IsCurrentUserAdmin && m.UserId != Model.CurrentUser.Id)
+								{
+									<button type="button" class="btn btn-link btn-sm text-danger p-0 btn-kick-member" data-user-id="@m.UserId" title="Xóa khỏi nhóm">
+										<i class="bi bi-x-circle"></i>
+									</button>
+								}
 							</div>
 						}
 					}
@@ -275,6 +332,11 @@
 					{
 						<p class="text-muted small">Không có thành viên.</p>
 					}
+				</div>
+				<div id="groupActionsBar" class="mt-3 pt-2 border-top @(activeConv?.IsGroup == true ? "" : "d-none")">
+					<button type="button" id="btnLeaveGroup" class="btn btn-sm btn-outline-danger w-100 rounded-pill">
+						<i class="bi bi-box-arrow-left me-1"></i> Rời nhóm
+					</button>
 				</div>
 			</div>
 
@@ -289,6 +351,9 @@
 					{
 						@foreach (var f in activeConv.Attachments)
 						{
+							var fileHref = f.StorageKey.StartsWith("uploads/", StringComparison.OrdinalIgnoreCase)
+								? "/" + f.StorageKey
+								: (f.StorageKey.StartsWith("/") ? f.StorageKey : "/uploads/" + f.StorageKey);
 							<div class="file-item">
 								<div class="file-left">
 									<div class="file-icon-box icon-box-@f.BadgeColor">
@@ -299,7 +364,7 @@
 										<p class="file-info">@f.FormattedSize</p>
 									</div>
 								</div>
-								<a href="/uploads/@f.StorageKey" download class="btn-file-dl" title="Tải về">
+								<a href="@fileHref" download class="btn-file-dl" title="Tải về">
 									<i class="bi bi-download"></i>
 								</a>
 							</div>
@@ -338,6 +403,27 @@
 				<div class="modal-footer border-top-0 pt-0">
 					<button type="button" class="btn btn-light rounded-pill px-3" data-bs-dismiss="modal">Hủy</button>
 					<button type="button" id="btnSubmitCreateGroup" class="btn btn-primary rounded-pill px-4">Tạo nhóm</button>
+				</div>
+			</div>
+		</div>
+	</div>
+
+	<!-- MODAL THÊM THÀNH VIÊN VÀO NHÓM -->
+	<div class="modal fade" id="addGroupMembersModal" tabindex="-1" aria-hidden="true">
+		<div class="modal-dialog modal-dialog-centered">
+			<div class="modal-content rounded-4 border-0 shadow">
+				<div class="modal-header border-bottom-0 pb-0">
+					<h5 class="modal-title fw-bold">Thêm thành viên vào nhóm</h5>
+					<button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+				</div>
+				<div class="modal-body">
+					<div id="addMembersSelectionList" class="border rounded-3 p-2" style="max-height: 240px; overflow-y: auto;">
+						<div class="text-center text-muted py-3 small">Đang tải danh sách bạn bè...</div>
+					</div>
+				</div>
+				<div class="modal-footer border-top-0 pt-0">
+					<button type="button" class="btn btn-light rounded-pill px-3" data-bs-dismiss="modal">Hủy</button>
+					<button type="button" id="btnSubmitAddMembers" class="btn btn-primary rounded-pill px-4">Thêm vào nhóm</button>
 				</div>
 			</div>
 		</div>

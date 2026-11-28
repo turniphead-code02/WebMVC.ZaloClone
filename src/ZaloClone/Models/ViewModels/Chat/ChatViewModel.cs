@@ -15,6 +15,7 @@ public class ConversationSummaryDto
     public string Title { get; set; } = string.Empty;
     public string? AvatarUrl { get; set; }
     public bool IsGroup { get; set; }
+    public Guid? OtherUserId { get; set; }
     public string? LastMessageContent { get; set; }
     public DateTimeOffset? LastMessageTime { get; set; }
     public string FormattedTime { get; set; } = string.Empty;
@@ -31,6 +32,8 @@ public class ConversationDetailDto
     public string Title { get; set; } = string.Empty;
     public string? AvatarUrl { get; set; }
     public bool IsGroup { get; set; }
+    public bool IsCurrentUserAdmin { get; set; }
+    public Guid? OtherUserId { get; set; }
     public bool IsOnline { get; set; }
     public List<MessageDto> Messages { get; set; } = new();
     public List<MemberDto> Members { get; set; } = new();

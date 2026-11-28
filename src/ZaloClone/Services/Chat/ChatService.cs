@@ -52,7 +52,7 @@ public class ChatService : IChatService
             .Where(m => m.ConversationId == conversationId)
             .Include(m => m.Sender)
             .Include(m => m.Attachments)
-            .OrderBy(m => m.CreatedAt)
+            .OrderByDescending(m => m.CreatedAt)
             .Skip(skip)
             .Take(take)
             .Select(m => new MessageDto
@@ -68,6 +68,7 @@ public class ChatService : IChatService
                 IsSelf = m.SenderId == userId
             })
             .ToListAsync();
+        messages.Reverse();
 
         return ApiResponse<List<MessageDto>>.Ok(messages);
     }
@@ -88,7 +89,7 @@ public class ChatService : IChatService
             .Include(m => m.Attachments)
             .Include(m => m.ReplyTo)
                 .ThenInclude(r => r!.Sender)
-            .OrderBy(m => m.CreatedAt)
+            .OrderByDescending(m => m.CreatedAt)
             .Skip(skip)
             .Take(take)
             .Select(m => new ChatMessageDetailDto
@@ -112,8 +113,40 @@ public class ChatService : IChatService
                 IsPinned = m.IsPinned && !m.IsRecalled
             })
             .ToListAsync();
+        messages.Reverse();
 
         return ApiResponse<List<ChatMessageDetailDto>>.Ok(messages);
+    }
+
+    private async Task<(bool Allowed, string? Error, List<Guid> MemberIds)> ValidateSendPermissionAsync(Guid conversationId, Guid senderId)
+    {
+        var activeMemberIds = await _context.ConversationMembers
+            .Where(m => m.ConversationId == conversationId && m.LeftAt == null)
+            .Select(m => m.UserId)
+            .ToListAsync();
+
+        if (!activeMemberIds.Contains(senderId))
+        {
+            return (false, "Bạn không phải thành viên của cuộc trò chuyện này.", activeMemberIds);
+        }
+
+        var conv = await _context.Conversations
+            .Include(c => c.DirectConversation)
+            .FirstOrDefaultAsync(c => c.Id == conversationId);
+        if (conv != null && !conv.IsGroup && conv.DirectConversation != null)
+        {
+            var u1 = conv.DirectConversation.UserId1;
+            var u2 = conv.DirectConversation.UserId2;
+            var isBlocked = await _context.UserBlocks.AnyAsync(b =>
+                (b.BlockerId == u1 && b.BlockedId == u2) ||
+                (b.BlockerId == u2 && b.BlockedId == u1));
+            if (isBlocked)
+            {
+                return (false, "Không thể gửi tin nhắn do một trong hai người đã chặn nhau.", activeMemberIds);
+            }
+        }
+
+        return (true, null, activeMemberIds);
     }
 
     public async Task<ApiResponse<MessageDto>> SendTextMessageAsync(Guid conversationId, Guid senderId, string content, Guid? replyToId = null)
@@ -123,12 +156,16 @@ public class ChatService : IChatService
             return ApiResponse<MessageDto>.Fail("Nội dung tin nhắn không được để trống.");
         }
 
-        var isMember = await _context.ConversationMembers
-            .AnyAsync(m => m.ConversationId == conversationId && m.UserId == senderId && m.LeftAt == null);
-
-        if (!isMember)
+        var trimmed = content.Trim();
+        if (trimmed.Length > 4000)
         {
-            return ApiResponse<MessageDto>.Fail("Bạn không phải thành viên của cuộc trò chuyện này.");
+            return ApiResponse<MessageDto>.Fail("Tin nhắn không được vượt quá 4.000 ký tự.");
+        }
+
+        var perm = await ValidateSendPermissionAsync(conversationId, senderId);
+        if (!perm.Allowed)
+        {
+            return ApiResponse<MessageDto>.Fail(perm.Error ?? "Không có quyền gửi tin nhắn.");
         }
 
         Message? replyMsg = null;
@@ -147,7 +184,7 @@ public class ChatService : IChatService
             Id = Guid.NewGuid(),
             ConversationId = conversationId,
             SenderId = senderId,
-            Content = content.Trim(),
+            Content = trimmed,
             MessageType = "Text",
             ReplyToId = replyMsg?.Id,
             CreatedAt = now
@@ -182,7 +219,7 @@ public class ChatService : IChatService
             IsSelf = true
         };
 
-        await _hubContext.Clients.Group(ChatHub.GetConversationGroupName(conversationId))
+        await _hubContext.Clients.Groups(perm.MemberIds.Select(ChatHub.GetUserGroupName).ToList())
             .SendAsync("ReceiveMessage", new
             {
                 id = message.Id,
@@ -209,12 +246,10 @@ public class ChatService : IChatService
             return ApiResponse<MessageDto>.Fail("File không hợp lệ hoặc rỗng.");
         }
 
-        var isMember = await _context.ConversationMembers
-            .AnyAsync(m => m.ConversationId == conversationId && m.UserId == senderId && m.LeftAt == null);
-
-        if (!isMember)
+        var perm = await ValidateSendPermissionAsync(conversationId, senderId);
+        if (!perm.Allowed)
         {
-            return ApiResponse<MessageDto>.Fail("Bạn không có quyền gửi file vào hội thoại này.");
+            return ApiResponse<MessageDto>.Fail(perm.Error ?? "Bạn không có quyền gửi file vào hội thoại này.");
         }
 
         var ext = Path.GetExtension(file.FileName).ToLowerInvariant();
@@ -312,7 +347,7 @@ public class ChatService : IChatService
             IsSelf = true
         };
 
-        await _hubContext.Clients.Group(ChatHub.GetConversationGroupName(conversationId))
+        await _hubContext.Clients.Groups(perm.MemberIds.Select(ChatHub.GetUserGroupName).ToList())
             .SendAsync("ReceiveMessage", new
             {
                 id = message.Id,

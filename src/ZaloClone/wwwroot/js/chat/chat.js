@@ -206,6 +206,7 @@ document.addEventListener("DOMContentLoaded", function () {
             const row = buildMessageRow({
                 id: msg.id,
                 senderName: msg.senderName,
+                senderAvatar: msg.senderAvatar,
                 content: msg.content,
                 messageType: msg.messageType,
                 fileUrl: msg.fileUrl,
@@ -222,8 +223,27 @@ document.addEventListener("DOMContentLoaded", function () {
             chatStream.appendChild(row);
             chatStream.scrollTop = chatStream.scrollHeight;
 
+            if (typingIndicator) {
+                typingIndicator.classList.add("d-none");
+            }
+            if (!isSelf && connection.state === signalR.HubConnectionState.Connected && msg.id) {
+                connection.invoke("MarkAsRead", activeConvId, msg.id).catch(() => {});
+            }
+
             if (msg.fileUrl) {
                 refreshAttachments(activeConvId);
+            }
+        } else if (msg.senderId !== currentUserId) {
+            // Tăng badge chưa đọc ở Cột 2 nếu đang mở hội thoại khác
+            const convElement = document.querySelector(`.conv-item[data-id="${msg.conversationId}"]`);
+            if (convElement) {
+                const badge = convElement.querySelector(".unread-badge");
+                if (badge) {
+                    const nextCount = (parseInt(badge.dataset.unread || "0", 10) || 0) + 1;
+                    badge.dataset.unread = String(nextCount);
+                    badge.textContent = String(nextCount);
+                    badge.classList.remove("d-none");
+                }
             }
         }
 
@@ -296,6 +316,33 @@ document.addEventListener("DOMContentLoaded", function () {
         }
     });
 
+    // Nhận trạng thái Online/Offline thật từ Server
+    connection.on("PresenceChanged", function (data) {
+        if (!data || !data.userId) return;
+        document.querySelectorAll(`.conv-item[data-other-user-id="${data.userId}"] .online-indicator`).forEach(dot => {
+            dot.classList.toggle("d-none", !data.isOnline);
+        });
+        const headerStatus = document.getElementById("chatHeaderStatus");
+        if (headerStatus && headerStatus.dataset.otherUserId === data.userId) {
+            headerStatus.classList.toggle("offline", !data.isOnline);
+            const label = headerStatus.querySelector("span:last-child");
+            if (label) label.textContent = data.isOnline ? "Online" : "Offline";
+        }
+    });
+
+    // Nhận trạng thái "Đang soạn tin..."
+    const typingIndicator = document.getElementById("typingIndicator");
+    let typingHideTimer = null;
+    connection.on("UserTyping", function (data) {
+        if (!data || data.conversationId !== activeConvId || data.userId === currentUserId || !typingIndicator) return;
+        typingIndicator.textContent = `${data.senderName || "Ai đó"} đang soạn tin...`;
+        typingIndicator.classList.remove("d-none");
+        clearTimeout(typingHideTimer);
+        typingHideTimer = setTimeout(() => {
+            typingIndicator.classList.add("d-none");
+        }, 2500);
+    });
+
     connection.start()
         .then(() => console.log("SignalR ChatHub đã kết nối thành công!"))
         .catch(err => console.error("Lỗi kết nối SignalR:", err));
@@ -343,7 +390,7 @@ document.addEventListener("DOMContentLoaded", function () {
                 fileName = msg.content.replace(/^\[(Ảnh|Tệp)\]\s*/, "");
                 const matched = attachments.find(a => a.fileName === fileName);
                 if (matched) {
-                    fileUrl = `/uploads/${matched.storageKey}`;
+                    fileUrl = getStorageUrl(matched.storageKey);
                 }
             }
 
@@ -359,6 +406,7 @@ document.addEventListener("DOMContentLoaded", function () {
             const row = buildMessageRow({
                 id: msg.id,
                 senderName: msg.senderName,
+                senderAvatar: msg.senderAvatar,
                 content: msg.content,
                 messageType: msg.messageType,
                 fileUrl: fileUrl,
@@ -432,8 +480,12 @@ document.addEventListener("DOMContentLoaded", function () {
         row.className = `msg-row ${msg.isSelf ? "outgoing" : "incoming"}`;
         if (msg.id) row.dataset.messageId = msg.id;
 
+        const avatarHtml = msg.senderAvatar
+            ? `<img src="${escapeHtml(msg.senderAvatar)}" alt="${escapeHtml(msg.senderName)}" class="avatar-img" />`
+            : initials;
+
         row.innerHTML = `
-            <div class="msg-avatar" title="${escapeHtml(msg.senderName)}">${initials}</div>
+            <div class="msg-avatar" title="${escapeHtml(msg.senderName)}">${avatarHtml}</div>
             <div class="msg-bubble-wrap">
                 ${!msg.isSelf ? `<div class="msg-sender-name">${escapeHtml(msg.senderName)}</div>` : ""}
                 <div class="msg-bubble">${replyQuoteHtml}${bubbleContent}</div>
@@ -542,11 +594,19 @@ document.addEventListener("DOMContentLoaded", function () {
         btnSend.addEventListener("click", sendMessage);
     }
 
+    let lastTypingSentAt = 0;
     if (inputMessage) {
         inputMessage.addEventListener("keydown", function (e) {
             if (e.key === "Enter" && !e.shiftKey) {
                 e.preventDefault();
                 sendMessage();
+            }
+        });
+        inputMessage.addEventListener("input", function () {
+            const now = Date.now();
+            if (activeConvId && connection.state === signalR.HubConnectionState.Connected && now - lastTypingSentAt > 1500) {
+                lastTypingSentAt = now;
+                connection.invoke("Typing", activeConvId).catch(() => {});
             }
         });
     }
@@ -615,6 +675,13 @@ document.addEventListener("DOMContentLoaded", function () {
 
             document.querySelectorAll(".conv-item").forEach(el => el.classList.remove("active"));
             this.classList.add("active");
+            const unreadBadge = this.querySelector(".unread-badge");
+            if (unreadBadge) {
+                unreadBadge.dataset.unread = "0";
+                unreadBadge.textContent = "0";
+                unreadBadge.classList.add("d-none");
+            }
+            if (typingIndicator) typingIndicator.classList.add("d-none");
             activeConvId = targetId;
             document.body.dataset.activeConvId = targetId;
 
@@ -639,8 +706,27 @@ document.addEventListener("DOMContentLoaded", function () {
         const chatHeaderName = document.getElementById("chatHeaderName");
         if (chatHeaderName) chatHeaderName.textContent = convName;
 
+        const chatHeaderAvatar = document.getElementById("chatHeaderAvatar");
+        const convAvatarEl = convItem.querySelector(".conv-avatar");
+        if (chatHeaderAvatar && convAvatarEl) {
+            chatHeaderAvatar.innerHTML = convAvatarEl.innerHTML;
+        }
+
+        const chatHeaderStatus = document.getElementById("chatHeaderStatus");
+        if (chatHeaderStatus) {
+            chatHeaderStatus.dataset.otherUserId = data.otherUserId || "";
+            chatHeaderStatus.classList.toggle("offline", !data.isOnline);
+            const label = chatHeaderStatus.querySelector("span:last-child");
+            if (label) label.textContent = data.isOnline ? "Online" : "Offline";
+        }
+
         // Gọi API /Chat/Messages để lấy đầy đủ trạng thái Reply, Pin, Recall, Ảnh/File
         syncCurrentConversationMessages(activeConvId);
+
+        const btnOpenAddMembers = document.getElementById("btnOpenAddMembers");
+        const groupActionsBar = document.getElementById("groupActionsBar");
+        if (btnOpenAddMembers) btnOpenAddMembers.classList.toggle("d-none", !data.isGroup);
+        if (groupActionsBar) groupActionsBar.classList.toggle("d-none", !data.isGroup);
 
         const memberList = document.getElementById("directoryMemberList");
         const memberCount = document.getElementById("directoryMemberCount");
@@ -648,13 +734,22 @@ document.addEventListener("DOMContentLoaded", function () {
             if (memberCount) memberCount.textContent = data.members.length;
             memberList.innerHTML = data.members.map(m => {
                 const initials = m.displayName ? m.displayName.split(" ").map(n => n[0]).slice(-2).join("") : "U";
+                const avatarHtml = m.avatarUrl
+                    ? `<img src="${escapeHtml(m.avatarUrl)}" alt="${escapeHtml(m.displayName)}" class="avatar-img" />`
+                    : initials;
+                const kickBtn = (data.isGroup && data.isCurrentUserAdmin && m.userId !== currentUserId)
+                    ? `<button type="button" class="btn btn-link btn-sm text-danger p-0 btn-kick-member" data-user-id="${m.userId}" title="Xóa khỏi nhóm"><i class="bi bi-x-circle"></i></button>`
+                    : "";
                 return `
-                    <div class="member-item">
-                        <div class="member-avatar">${initials}</div>
-                        <div class="member-details">
-                            <h6>${escapeHtml(m.displayName)}</h6>
-                            <p>${escapeHtml(m.bio || (m.role === "Admin" ? "Trưởng nhóm" : "Thành viên"))}</p>
+                    <div class="member-item justify-content-between">
+                        <div class="d-flex align-items-center gap-2 min-width-0">
+                            <div class="member-avatar flex-shrink-0">${avatarHtml}</div>
+                            <div class="member-details text-truncate">
+                                <h6 class="text-truncate">${escapeHtml(m.displayName)}</h6>
+                                <p class="text-truncate">${escapeHtml(m.role === "Admin" ? "Trưởng nhóm" : (m.bio || "Thành viên"))}</p>
+                            </div>
                         </div>
+                        ${kickBtn}
                     </div>
                 `;
             }).join("");
@@ -693,7 +788,7 @@ document.addEventListener("DOMContentLoaded", function () {
                             <p class="file-info">${f.formattedSize}</p>
                         </div>
                     </div>
-                    <a href="/uploads/${escapeHtml(f.storageKey)}" download class="btn-file-dl" title="Tải về">
+                    <a href="${escapeHtml(getStorageUrl(f.storageKey))}" download class="btn-file-dl" title="Tải về">
                         <i class="bi bi-download"></i>
                     </a>
                 </div>
@@ -786,6 +881,118 @@ document.addEventListener("DOMContentLoaded", function () {
                 this.textContent = "Tạo nhóm";
             }
         });
+    }
+
+    // 7. QUẢN LÝ NHÓM Ở CỘT 4 (Thêm thành viên, Xóa thành viên, Rời nhóm)
+    const addGroupMembersModal = document.getElementById("addGroupMembersModal");
+    const addMembersSelectionList = document.getElementById("addMembersSelectionList");
+    const btnSubmitAddMembers = document.getElementById("btnSubmitAddMembers");
+    const btnLeaveGroup = document.getElementById("btnLeaveGroup");
+    const directoryMemberList = document.getElementById("directoryMemberList");
+
+    if (addGroupMembersModal && addMembersSelectionList) {
+        addGroupMembersModal.addEventListener("show.bs.modal", async function () {
+            if (!activeConvId) return;
+            addMembersSelectionList.innerHTML = `<div class="text-center text-muted py-3 small">Đang tải danh sách bạn bè...</div>`;
+            try {
+                const res = await fetch(`/Group/FriendsToInvite?groupId=${activeConvId}`);
+                const data = await res.json();
+                const available = (data.data || []).filter(f => !f.isAlreadyMember);
+                if (data.success && available.length > 0) {
+                    addMembersSelectionList.innerHTML = available.map(f => `
+                        <div class="form-check d-flex align-items-center gap-2 py-1 border-bottom">
+                            <input class="form-check-input add-member-checkbox" type="checkbox" value="${f.userId}" id="add_m_${f.userId}">
+                            <label class="form-check-label d-flex align-items-center gap-2 cursor-pointer flex-grow-1" for="add_m_${f.userId}">
+                                <strong>${escapeHtml(f.displayName)}</strong>
+                                <span class="text-muted small">(${escapeHtml(f.email)})</span>
+                            </label>
+                        </div>
+                    `).join("");
+                } else {
+                    addMembersSelectionList.innerHTML = `<div class="text-center text-muted py-3 small">Tất cả bạn bè của bạn đều đã ở trong nhóm này.</div>`;
+                }
+            } catch (err) {
+                addMembersSelectionList.innerHTML = `<div class="text-danger small py-2">Không thể tải danh sách bạn bè.</div>`;
+            }
+        });
+    }
+
+    if (btnSubmitAddMembers) {
+        btnSubmitAddMembers.addEventListener("click", async function () {
+            const memberIds = Array.from(document.querySelectorAll(".add-member-checkbox:checked")).map(cb => cb.value);
+            if (memberIds.length === 0) {
+                alert("Vui lòng chọn ít nhất 1 người bạn.");
+                return;
+            }
+            try {
+                const res = await fetch("/Group/AddMembers", {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({ groupId: activeConvId, memberIds })
+                });
+                const data = await res.json();
+                if (data.success) {
+                    window.location.href = `/?conversationId=${activeConvId}`;
+                } else {
+                    alert(data.message || "Không thể thêm thành viên.");
+                }
+            } catch (err) {
+                alert("Lỗi kết nối khi thêm thành viên.");
+            }
+        });
+    }
+
+    if (directoryMemberList) {
+        directoryMemberList.addEventListener("click", async function (e) {
+            const btn = e.target.closest(".btn-kick-member");
+            if (!btn || !activeConvId) return;
+            const memberId = btn.dataset.userId;
+            if (!confirm("Bạn có chắc chắn muốn xóa thành viên này khỏi nhóm?")) return;
+
+            try {
+                const res = await fetch("/Group/RemoveMember", {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({ groupId: activeConvId, memberId })
+                });
+                const data = await res.json();
+                if (data.success) {
+                    window.location.href = `/?conversationId=${activeConvId}`;
+                } else {
+                    alert(data.message || "Không thể xóa thành viên.");
+                }
+            } catch (err) {
+                alert("Lỗi kết nối khi xóa thành viên.");
+            }
+        });
+    }
+
+    if (btnLeaveGroup) {
+        btnLeaveGroup.addEventListener("click", async function () {
+            if (!activeConvId) return;
+            if (!confirm("Bạn có chắc chắn muốn rời khỏi nhóm này?")) return;
+            try {
+                const res = await fetch("/Group/Leave", {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({ groupId: activeConvId })
+                });
+                const data = await res.json();
+                if (data.success) {
+                    window.location.href = "/";
+                } else {
+                    alert(data.message || "Không thể rời nhóm.");
+                }
+            } catch (err) {
+                alert("Lỗi kết nối khi rời nhóm.");
+            }
+        });
+    }
+
+    function getStorageUrl(storageKey) {
+        if (!storageKey) return "#";
+        const clean = storageKey.replace(/^\/+/, "");
+        return clean.toLowerCase().startsWith("uploads/") ? `/${clean}` : `/uploads/${clean}`;
     }
 
     function escapeHtml(str) {

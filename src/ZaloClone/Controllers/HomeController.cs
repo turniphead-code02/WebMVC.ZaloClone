@@ -39,6 +39,7 @@ public class HomeController : Controller
         // Lấy tất cả hội thoại của user
         var memberships = await _context.ConversationMembers
             .Where(m => m.UserId == currentUserId && m.LeftAt == null)
+            .Include(m => m.LastReadMessage)
             .Include(m => m.Conversation)
                 .ThenInclude(c => c.DirectConversation)
                     .ThenInclude(d => d!.User1)
@@ -51,6 +52,12 @@ public class HomeController : Controller
             .OrderByDescending(m => m.Conversation.UpdatedAt)
             .ToListAsync();
 
+        var convIds = memberships.Select(m => m.ConversationId).ToList();
+        var allMemberUserIdsByConv = await _context.ConversationMembers
+            .Where(m => convIds.Contains(m.ConversationId) && m.LeftAt == null && m.UserId != currentUserId)
+            .Select(m => new { m.ConversationId, m.UserId })
+            .ToListAsync();
+
         var convSummaries = new List<ConversationSummaryDto>();
 
         foreach (var m in memberships)
@@ -60,22 +67,29 @@ public class HomeController : Controller
             string? avatarUrl = c.AvatarUrl;
             string tagText;
             string tagColor;
+            Guid? otherUserId = null;
+            bool isOnline;
 
             if (c.IsGroup)
             {
                 title = c.Title ?? "Nhóm chat";
                 tagText = "Nhóm đồ án";
                 tagColor = "primary";
+                isOnline = allMemberUserIdsByConv
+                    .Where(x => x.ConversationId == c.Id)
+                    .Any(x => ChatHub.IsUserOnline(x.UserId));
             }
             else
             {
                 var otherUser = c.DirectConversation?.UserId1 == currentUserId
                     ? c.DirectConversation?.User2
                     : c.DirectConversation?.User1;
+                otherUserId = otherUser?.Id;
                 title = otherUser?.DisplayName ?? "Trò chuyện";
                 avatarUrl = otherUser?.AvatarUrl;
                 tagText = otherUser?.Role == "Admin" ? "Quản trị" : "Bạn bè";
                 tagColor = otherUser?.Role == "Admin" ? "danger" : "info";
+                isOnline = otherUserId.HasValue && ChatHub.IsUserOnline(otherUserId.Value);
             }
 
             var lastMsg = c.LastMessage;
@@ -91,11 +105,21 @@ public class HomeController : Controller
             {
                 var diff = DateTimeOffset.UtcNow - lastMsg.CreatedAt;
                 if (diff.TotalMinutes < 60)
-                    formattedTime = $"{(int)diff.TotalMinutes}m";
+                    formattedTime = $"{Math.Max(0, (int)diff.TotalMinutes)}m";
                 else if (diff.TotalHours < 24)
                     formattedTime = $"{(int)diff.TotalHours}h";
                 else
                     formattedTime = $"{(int)diff.TotalDays}d";
+            }
+
+            int unreadCount = 0;
+            if (lastMsg != null && m.LastReadMessageId != lastMsg.Id && lastMsg.SenderId != currentUserId)
+            {
+                var lastReadTime = m.LastReadMessage?.CreatedAt ?? DateTimeOffset.MinValue;
+                unreadCount = await _context.Messages.CountAsync(msg =>
+                    msg.ConversationId == c.Id &&
+                    msg.SenderId != currentUserId &&
+                    msg.CreatedAt > lastReadTime);
             }
 
             convSummaries.Add(new ConversationSummaryDto
@@ -104,14 +128,22 @@ public class HomeController : Controller
                 Title = title,
                 AvatarUrl = avatarUrl,
                 IsGroup = c.IsGroup,
+                OtherUserId = otherUserId,
                 LastMessageContent = preview,
                 LastMessageTime = lastMsg?.CreatedAt,
                 FormattedTime = formattedTime,
                 TagText = tagText,
                 TagColor = tagColor,
                 IsActive = false,
-                IsOnline = true
+                UnreadCount = unreadCount,
+                IsOnline = isOnline
             });
+        }
+
+        // Bug #4 (CHAT-15): Không cho phép mở hội thoại không thuộc quyền thành viên
+        if (conversationId.HasValue && convSummaries.All(cs => cs.Id != conversationId.Value))
+        {
+            return Forbid();
         }
 
         // Chọn conversation active
@@ -124,12 +156,14 @@ public class HomeController : Controller
             if (activeSummary != null)
             {
                 activeSummary.IsActive = true;
+                activeSummary.UnreadCount = 0;
             }
 
+            // Bug #6 (CHAT-05): Lấy 50 tin nhắn MỚI NHẤT rồi đảo lại theo thứ tự thời gian tăng dần
             var messages = await _context.Messages
                 .Where(msg => msg.ConversationId == activeId.Value)
                 .Include(msg => msg.Sender)
-                .OrderBy(msg => msg.CreatedAt)
+                .OrderByDescending(msg => msg.CreatedAt)
                 .Take(50)
                 .Select(msg => new MessageDto
                 {
@@ -144,23 +178,35 @@ public class HomeController : Controller
                     IsSelf = msg.SenderId == currentUserId
                 })
                 .ToListAsync();
+            messages.Reverse();
+
+            var activeMembership = memberships.FirstOrDefault(m => m.ConversationId == activeId.Value);
+            var latestMsgId = messages.LastOrDefault()?.Id;
+            if (activeMembership != null && latestMsgId.HasValue && activeMembership.LastReadMessageId != latestMsgId)
+            {
+                activeMembership.LastReadMessageId = latestMsgId;
+                activeMembership.LastReadAt = DateTimeOffset.UtcNow;
+                await _context.SaveChangesAsync();
+            }
 
             var members = await _context.ConversationMembers
                 .Where(m => m.ConversationId == activeId.Value && m.LeftAt == null)
                 .Include(m => m.User)
-                .Select(m => new MemberDto
-                {
-                    UserId = m.UserId,
-                    DisplayName = m.User.DisplayName,
-                    AvatarUrl = m.User.AvatarUrl,
-                    Role = m.Role,
-                    Bio = m.User.Bio ?? (m.Role == "Admin" ? "Trưởng nhóm" : "Thành viên"),
-                    IsOnline = true
-                })
                 .ToListAsync();
+
+            var memberDtos = members.Select(m => new MemberDto
+            {
+                UserId = m.UserId,
+                DisplayName = m.User.DisplayName,
+                AvatarUrl = m.User.AvatarUrl,
+                Role = m.Role,
+                Bio = m.User.Bio ?? (m.Role == "Admin" ? "Trưởng nhóm" : "Thành viên"),
+                IsOnline = ChatHub.IsUserOnline(m.UserId)
+            }).ToList();
 
             var attachments = await _context.MessageAttachments
                 .Where(a => a.Message.ConversationId == activeId.Value)
+                .OrderByDescending(a => a.CreatedAt)
                 .Select(a => new AttachmentDto
                 {
                     Id = a.Id,
@@ -188,9 +234,11 @@ public class HomeController : Controller
                 Title = activeSummary?.Title ?? "Hội thoại",
                 AvatarUrl = activeSummary?.AvatarUrl,
                 IsGroup = activeConvEntity?.IsGroup ?? false,
-                IsOnline = true,
+                IsCurrentUserAdmin = activeMembership?.Role == "Admin",
+                OtherUserId = activeSummary?.OtherUserId,
+                IsOnline = activeSummary?.IsOnline ?? false,
                 Messages = messages,
-                Members = members,
+                Members = memberDtos,
                 Attachments = attachments
             };
         }
@@ -210,10 +258,19 @@ public class HomeController : Controller
     {
         var currentUserId = User.GetUserId();
 
+        // Bug #4 (CHAT-15): Kiểm tra quyền thành viên trước khi trả dữ liệu
+        var membership = await _context.ConversationMembers
+            .FirstOrDefaultAsync(m => m.ConversationId == conversationId && m.UserId == currentUserId && m.LeftAt == null);
+        if (membership == null)
+        {
+            return Forbid();
+        }
+
+        // Bug #6 (CHAT-05): Lấy 50 tin nhắn MỚI NHẤT rồi đảo lại theo thứ tự thời gian tăng dần
         var messages = await _context.Messages
             .Where(msg => msg.ConversationId == conversationId)
             .Include(msg => msg.Sender)
-            .OrderBy(msg => msg.CreatedAt)
+            .OrderByDescending(msg => msg.CreatedAt)
             .Take(50)
             .Select(msg => new MessageDto
             {
@@ -228,23 +285,49 @@ public class HomeController : Controller
                 IsSelf = msg.SenderId == currentUserId
             })
             .ToListAsync();
+        messages.Reverse();
 
-        var members = await _context.ConversationMembers
+        var latestMsgId = messages.LastOrDefault()?.Id;
+        if (latestMsgId.HasValue && membership.LastReadMessageId != latestMsgId)
+        {
+            membership.LastReadMessageId = latestMsgId;
+            membership.LastReadAt = DateTimeOffset.UtcNow;
+            await _context.SaveChangesAsync();
+        }
+
+        var conv = await _context.Conversations
+            .Include(c => c.DirectConversation)
+            .FirstOrDefaultAsync(c => c.Id == conversationId);
+
+        var memberEntities = await _context.ConversationMembers
             .Where(m => m.ConversationId == conversationId && m.LeftAt == null)
             .Include(m => m.User)
-            .Select(m => new MemberDto
-            {
-                UserId = m.UserId,
-                DisplayName = m.User.DisplayName,
-                AvatarUrl = m.User.AvatarUrl,
-                Role = m.Role,
-                Bio = m.User.Bio ?? "",
-                IsOnline = true
-            })
             .ToListAsync();
+
+        var members = memberEntities.Select(m => new MemberDto
+        {
+            UserId = m.UserId,
+            DisplayName = m.User.DisplayName,
+            AvatarUrl = m.User.AvatarUrl,
+            Role = m.Role,
+            Bio = m.User.Bio ?? (m.Role == "Admin" ? "Trưởng nhóm" : "Thành viên"),
+            IsOnline = ChatHub.IsUserOnline(m.UserId)
+        }).ToList();
+
+        Guid? otherUserId = null;
+        if (conv != null && !conv.IsGroup && conv.DirectConversation != null)
+        {
+            otherUserId = conv.DirectConversation.UserId1 == currentUserId
+                ? conv.DirectConversation.UserId2
+                : conv.DirectConversation.UserId1;
+        }
+        bool isOnline = otherUserId.HasValue
+            ? ChatHub.IsUserOnline(otherUserId.Value)
+            : members.Any(m => m.UserId != currentUserId && m.IsOnline);
 
         var attachments = await _context.MessageAttachments
             .Where(a => a.Message.ConversationId == conversationId)
+            .OrderByDescending(a => a.CreatedAt)
             .Select(a => new AttachmentDto
             {
                 Id = a.Id,
@@ -264,7 +347,17 @@ public class HomeController : Controller
             })
             .ToListAsync();
 
-        return Json(new { success = true, messages, members, attachments });
+        return Json(new
+        {
+            success = true,
+            isGroup = conv?.IsGroup ?? false,
+            isCurrentUserAdmin = membership.Role == "Admin",
+            otherUserId,
+            isOnline,
+            messages,
+            members,
+            attachments
+        });
     }
 
     [HttpPost]
@@ -276,11 +369,40 @@ public class HomeController : Controller
             return BadRequest(new { success = false, message = "Nội dung không hợp lệ" });
         }
 
-        var isMember = await _context.ConversationMembers
-            .AnyAsync(m => m.ConversationId == req.ConversationId && m.UserId == currentUserId && m.LeftAt == null);
-        if (!isMember)
+        var trimmed = req.Content.Trim();
+        if (trimmed.Length > 4000)
+        {
+            return BadRequest(new { success = false, message = "Tin nhắn không được vượt quá 4.000 ký tự." });
+        }
+
+        var activeMemberIds = await _context.ConversationMembers
+            .Where(m => m.ConversationId == req.ConversationId && m.LeftAt == null)
+            .Select(m => m.UserId)
+            .ToListAsync();
+        if (!activeMemberIds.Contains(currentUserId))
         {
             return Forbid();
+        }
+
+        var conv = await _context.Conversations
+            .Include(c => c.DirectConversation)
+            .FirstOrDefaultAsync(c => c.Id == req.ConversationId);
+        if (conv == null)
+        {
+            return NotFound(new { success = false, message = "Không tìm thấy hội thoại." });
+        }
+
+        if (!conv.IsGroup && conv.DirectConversation != null)
+        {
+            var u1 = conv.DirectConversation.UserId1;
+            var u2 = conv.DirectConversation.UserId2;
+            var isBlocked = await _context.UserBlocks.AnyAsync(b =>
+                (b.BlockerId == u1 && b.BlockedId == u2) ||
+                (b.BlockerId == u2 && b.BlockedId == u1));
+            if (isBlocked)
+            {
+                return BadRequest(new { success = false, message = "Không thể gửi tin nhắn do một trong hai người đã chặn nhau." });
+            }
         }
 
         var sender = await _context.Users.FindAsync(currentUserId);
@@ -290,19 +412,14 @@ public class HomeController : Controller
             Id = Guid.NewGuid(),
             ConversationId = req.ConversationId,
             SenderId = currentUserId,
-            Content = req.Content.Trim(),
+            Content = trimmed,
             MessageType = "Text",
             CreatedAt = now
         };
 
         _context.Messages.Add(message);
-
-        var conv = await _context.Conversations.FindAsync(req.ConversationId);
-        if (conv != null)
-        {
-            conv.LastMessageId = message.Id;
-            conv.UpdatedAt = now;
-        }
+        conv.LastMessageId = message.Id;
+        conv.UpdatedAt = now;
 
         await _context.SaveChangesAsync();
 

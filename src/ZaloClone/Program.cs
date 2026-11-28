@@ -89,7 +89,15 @@ builder.Services.AddScoped<IGroupService, GroupService>();
 // 4. SignalR Real-time
 builder.Services.AddSignalR();
 
-// 5. MVC Views & Controllers
+// 5. MVC Views & Controllers + Giới hạn upload file 55 MB (cho phép file tối đa 50 MB)
+builder.Services.Configure<Microsoft.AspNetCore.Http.Features.FormOptions>(options =>
+{
+    options.MultipartBodyLengthLimit = 55L * 1024 * 1024;
+});
+builder.WebHost.ConfigureKestrel(options =>
+{
+    options.Limits.MaxRequestBodySize = 55L * 1024 * 1024;
+});
 builder.Services.AddControllersWithViews();
 
 var app = builder.Build();
