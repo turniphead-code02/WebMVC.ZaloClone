@@ -3,8 +3,11 @@ using System.Threading.Tasks;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.EntityFrameworkCore;
+using ZaloClone.Data;
 using ZaloClone.Infrastructure;
 using ZaloClone.Services.Chat;
+using ZaloClone.Services.Storage;
 
 namespace ZaloClone.Controllers;
 
@@ -12,10 +15,48 @@ namespace ZaloClone.Controllers;
 public class ChatController : Controller
 {
     private readonly IChatService _chatService;
+    private readonly AppDbContext _db;
+    private readonly IFileStorageService _storageService;
 
-    public ChatController(IChatService chatService)
+    public ChatController(IChatService chatService, AppDbContext db, IFileStorageService storageService)
     {
         _chatService = chatService;
+        _db = db;
+        _storageService = storageService;
+    }
+
+    /// <summary>
+    /// Phục vụ file đính kèm có kiểm tra quyền thành viên & trạng thái thu hồi (CHAT-14, CHAT-17).
+    /// </summary>
+    [HttpGet("Chat/File/{attachmentId:guid}")]
+    public async Task<IActionResult> DownloadFile(Guid attachmentId)
+    {
+        var userId = User.GetUserId();
+        var attachment = await _db.MessageAttachments
+            .AsNoTracking()
+            .Include(a => a.Message)
+            .FirstOrDefaultAsync(a => a.Id == attachmentId);
+
+        if (attachment == null || attachment.Message.IsRecalled)
+        {
+            return NotFound("Tệp không tồn tại hoặc đã bị thu hồi.");
+        }
+
+        var isMember = await _db.ConversationMembers
+            .AnyAsync(m => m.ConversationId == attachment.Message.ConversationId && m.UserId == userId && m.LeftAt == null);
+        if (!isMember)
+        {
+            return Forbid();
+        }
+
+        var physicalPath = _storageService.GetPhysicalPath(attachment.StorageKey);
+        if (string.IsNullOrEmpty(physicalPath) || !System.IO.File.Exists(physicalPath))
+        {
+            return NotFound("Không tìm thấy tệp trên máy chủ.");
+        }
+
+        var contentType = string.IsNullOrWhiteSpace(attachment.FileType) ? "application/octet-stream" : attachment.FileType;
+        return PhysicalFile(physicalPath, contentType, attachment.FileName, enableRangeProcessing: true);
     }
 
     [HttpGet]

@@ -46,24 +46,56 @@ public class LocalFileStorageService : IFileStorageService
         }
 
         var now = DateTime.UtcNow;
-        var relativeDir = Path.Combine("uploads", category, now.ToString("yyyy"), now.ToString("MM"));
-        var physicalDir = Path.Combine(_environment.WebRootPath, relativeDir);
+        bool isPrivateChatFile = category.Equals("chat-images", StringComparison.OrdinalIgnoreCase)
+                              || category.Equals("chat-files", StringComparison.OrdinalIgnoreCase);
+
+        var uniqueFileName = $"{Guid.NewGuid():N}{ext}";
+        string storageKey;
+        string physicalDir;
+
+        if (isPrivateChatFile)
+        {
+            var relativeDir = Path.Combine("App_Data", "uploads", category, now.ToString("yyyy"), now.ToString("MM"));
+            physicalDir = Path.Combine(_environment.ContentRootPath, relativeDir);
+            storageKey = $"private/{category}/{now:yyyy}/{now:MM}/{uniqueFileName}";
+        }
+        else
+        {
+            var relativeDir = Path.Combine("uploads", category, now.ToString("yyyy"), now.ToString("MM"));
+            physicalDir = Path.Combine(_environment.WebRootPath, relativeDir);
+            storageKey = $"uploads/{category}/{now:yyyy}/{now:MM}/{uniqueFileName}";
+        }
 
         if (!Directory.Exists(physicalDir))
         {
             Directory.CreateDirectory(physicalDir);
         }
 
-        var uniqueFileName = $"{Guid.NewGuid():N}{ext}";
         var physicalPath = Path.Combine(physicalDir, uniqueFileName);
 
         await using var stream = new FileStream(physicalPath, FileMode.Create);
         await file.CopyToAsync(stream, cancellationToken);
 
-        // Lưu DB luôn dùng forward slash '/' bất kể Windows hay macOS/Linux
-        var storageKey = $"uploads/{category}/{now:yyyy}/{now:MM}/{uniqueFileName}";
         _logger.LogInformation("Saved file {FileName} to {StorageKey}", file.FileName, storageKey);
         return storageKey;
+    }
+
+    public string GetPhysicalPath(string storageKey)
+    {
+        if (string.IsNullOrWhiteSpace(storageKey))
+        {
+            return string.Empty;
+        }
+
+        var cleanKey = storageKey.Replace('\\', '/').TrimStart('/');
+        if (cleanKey.StartsWith("private/", StringComparison.OrdinalIgnoreCase))
+        {
+            var subPath = cleanKey["private/".Length..].Replace('/', Path.DirectorySeparatorChar);
+            return Path.Combine(_environment.ContentRootPath, "App_Data", "uploads", subPath);
+        }
+
+        var normalizedKey = cleanKey.Replace('/', Path.DirectorySeparatorChar);
+        return Path.Combine(_environment.WebRootPath, normalizedKey);
     }
 
     public Task DeleteFileAsync(string storageKey, CancellationToken cancellationToken = default)
@@ -73,11 +105,9 @@ public class LocalFileStorageService : IFileStorageService
             return Task.CompletedTask;
         }
 
-        // Chuyển relative storage key thành đường dẫn vật lý an toàn
-        var normalizedKey = storageKey.Replace('/', Path.DirectorySeparatorChar).TrimStart(Path.DirectorySeparatorChar);
-        var physicalPath = Path.Combine(_environment.WebRootPath, normalizedKey);
+        var physicalPath = GetPhysicalPath(storageKey);
 
-        if (File.Exists(physicalPath))
+        if (!string.IsNullOrEmpty(physicalPath) && File.Exists(physicalPath))
         {
             File.Delete(physicalPath);
             _logger.LogInformation("Deleted file at {PhysicalPath}", physicalPath);

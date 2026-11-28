@@ -49,3 +49,6 @@ desktop.ini
 *.db
 *.log
 
+
+# ===== Tệp chat riêng tư tải lên =====
+**/App_Data/

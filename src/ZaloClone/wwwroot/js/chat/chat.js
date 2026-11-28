@@ -279,6 +279,11 @@ document.addEventListener("DOMContentLoaded", function () {
         if (currentPinnedMessageId === data.messageId) {
             updatePinnedBanner(null);
         }
+        refreshAttachments(activeConvId);
+    });
+
+    connection.on("ReceiveError", function (errorMessage) {
+        if (errorMessage) alert(errorMessage);
     });
 
     // Nhận sự kiện Ghim / Bỏ ghim tin nhắn real-time từ Server
@@ -390,7 +395,7 @@ document.addEventListener("DOMContentLoaded", function () {
                 fileName = msg.content.replace(/^\[(Ảnh|Tệp)\]\s*/, "");
                 const matched = attachments.find(a => a.fileName === fileName);
                 if (matched) {
-                    fileUrl = getStorageUrl(matched.storageKey);
+                    fileUrl = matched.id ? `/Chat/File/${matched.id}` : getStorageUrl(matched.storageKey);
                 }
             }
 
@@ -788,7 +793,7 @@ document.addEventListener("DOMContentLoaded", function () {
                             <p class="file-info">${f.formattedSize}</p>
                         </div>
                     </div>
-                    <a href="${escapeHtml(getStorageUrl(f.storageKey))}" download class="btn-file-dl" title="Tải về">
+                    <a href="${f.id ? `/Chat/File/${f.id}` : escapeHtml(getStorageUrl(f.storageKey))}" download class="btn-file-dl" title="Tải về">
                         <i class="bi bi-download"></i>
                     </a>
                 </div>

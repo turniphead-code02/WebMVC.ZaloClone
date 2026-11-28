@@ -4,7 +4,7 @@ using Microsoft.AspNetCore.SignalR;
 using Microsoft.EntityFrameworkCore;
 using ZaloClone.Data;
 using ZaloClone.Infrastructure;
-using ZaloClone.Models.Entities;
+using ZaloClone.Services.Chat;
 
 namespace ZaloClone.Hubs;
 
@@ -14,16 +14,39 @@ public class ChatHub : Hub
     private static readonly ConcurrentDictionary<Guid, ConcurrentDictionary<string, byte>> _onlineUsers = new();
 
     private readonly AppDbContext _dbContext;
+    private readonly IServiceProvider _serviceProvider;
     private readonly ILogger<ChatHub> _logger;
 
-    public ChatHub(AppDbContext dbContext, ILogger<ChatHub> logger)
+    public ChatHub(AppDbContext dbContext, IServiceProvider serviceProvider, ILogger<ChatHub> logger)
     {
         _dbContext = dbContext;
+        _serviceProvider = serviceProvider;
         _logger = logger;
     }
 
     public static bool IsUserOnline(Guid userId) =>
         _onlineUsers.TryGetValue(userId, out var connections) && !connections.IsEmpty;
+
+    private async Task<List<string>> GetPeerUserGroupsAsync(Guid userId)
+    {
+        var convMemberIds = await _dbContext.ConversationMembers
+            .Where(m => m.LeftAt == null && m.UserId != userId &&
+                        _dbContext.ConversationMembers.Any(my => my.ConversationId == m.ConversationId && my.UserId == userId && my.LeftAt == null))
+            .Select(m => m.UserId)
+            .Distinct()
+            .ToListAsync();
+
+        var friendIds = await _dbContext.Friendships
+            .Where(f => f.UserId1 == userId || f.UserId2 == userId)
+            .Select(f => f.UserId1 == userId ? f.UserId2 : f.UserId1)
+            .ToListAsync();
+
+        return convMemberIds
+            .Union(friendIds)
+            .Distinct()
+            .Select(GetUserGroupName)
+            .ToList();
+    }
 
     public override async Task OnConnectedAsync()
     {
@@ -34,10 +57,8 @@ public class ChatHub : Hub
             bool isFirstConnection = conns.IsEmpty;
             conns.TryAdd(Context.ConnectionId, 0);
 
-            // Thêm vào group riêng của user để nhận thông báo cá nhân & tin nhắn hội thoại mới
             await Groups.AddToGroupAsync(Context.ConnectionId, GetUserGroupName(userId));
 
-            // Thêm vào tất cả các group hội thoại mà user đang tham gia
             var activeConvIds = await _dbContext.ConversationMembers
                 .Where(m => m.UserId == userId && m.LeftAt == null)
                 .Select(m => m.ConversationId)
@@ -50,12 +71,16 @@ public class ChatHub : Hub
 
             if (isFirstConnection)
             {
-                await Clients.Others.SendAsync("PresenceChanged", new
+                var peerGroups = await GetPeerUserGroupsAsync(userId);
+                if (peerGroups.Count > 0)
                 {
-                    userId,
-                    isOnline = true,
-                    lastActiveAt = DateTimeOffset.UtcNow
-                });
+                    await Clients.Groups(peerGroups).SendAsync("PresenceChanged", new
+                    {
+                        userId,
+                        isOnline = true,
+                        lastActiveAt = DateTimeOffset.UtcNow
+                    });
+                }
             }
 
             _logger.LogInformation("User {UserId} connected with ConnectionId {ConnectionId}", userId, Context.ConnectionId);
@@ -83,12 +108,16 @@ public class ChatHub : Hub
             if (wentOffline)
             {
                 var now = DateTimeOffset.UtcNow;
-                await Clients.Others.SendAsync("PresenceChanged", new
+                var peerGroups = await GetPeerUserGroupsAsync(userId);
+                if (peerGroups.Count > 0)
                 {
-                    userId,
-                    isOnline = false,
-                    lastActiveAt = now
-                });
+                    await Clients.Groups(peerGroups).SendAsync("PresenceChanged", new
+                    {
+                        userId,
+                        isOnline = false,
+                        lastActiveAt = now
+                    });
+                }
 
                 await _dbContext.Users
                     .Where(u => u.Id == userId)
@@ -152,96 +181,19 @@ public class ChatHub : Hub
     }
 
     /// <summary>
-    /// Gửi tin nhắn tức thời qua SignalR WebSocket
+    /// Gửi tin nhắn tức thời qua SignalR WebSocket (ủy quyền tập trung về ChatService)
     /// </summary>
     public async Task SendMessage(Guid conversationId, string content, Guid? replyToId = null)
     {
         var userId = Context.User.GetUserId();
-        if (userId == Guid.Empty || string.IsNullOrWhiteSpace(content)) return;
+        if (userId == Guid.Empty) return;
 
-        var trimmed = content.Trim();
-        if (trimmed.Length > 4000)
+        var chatService = _serviceProvider.GetRequiredService<IChatService>();
+        var result = await chatService.SendTextMessageAsync(conversationId, userId, content, replyToId);
+        if (!result.Success)
         {
-            await Clients.Caller.SendAsync("ReceiveError", "Tin nhắn không được vượt quá 4.000 ký tự.");
-            return;
+            await Clients.Caller.SendAsync("ReceiveError", result.Message ?? "Không thể gửi tin nhắn.");
         }
-
-        var activeMemberIds = await _dbContext.ConversationMembers
-            .Where(m => m.ConversationId == conversationId && m.LeftAt == null)
-            .Select(m => m.UserId)
-            .ToListAsync();
-
-        if (!activeMemberIds.Contains(userId)) return;
-
-        var conv = await _dbContext.Conversations
-            .Include(c => c.DirectConversation)
-            .FirstOrDefaultAsync(c => c.Id == conversationId);
-        if (conv == null) return;
-
-        // CHAT-18: Kiểm tra chặn trong hội thoại 1-1
-        if (!conv.IsGroup && conv.DirectConversation != null)
-        {
-            var u1 = conv.DirectConversation.UserId1;
-            var u2 = conv.DirectConversation.UserId2;
-            var isBlocked = await _dbContext.UserBlocks.AnyAsync(b =>
-                (b.BlockerId == u1 && b.BlockedId == u2) ||
-                (b.BlockerId == u2 && b.BlockedId == u1));
-            if (isBlocked)
-            {
-                await Clients.Caller.SendAsync("ReceiveError", "Không thể gửi tin nhắn do một trong hai người đã chặn nhau.");
-                return;
-            }
-        }
-
-        Message? replyMsg = null;
-        if (replyToId.HasValue)
-        {
-            replyMsg = await _dbContext.Messages
-                .Include(m => m.Sender)
-                .FirstOrDefaultAsync(m => m.Id == replyToId.Value && m.ConversationId == conversationId);
-        }
-
-        var sender = await _dbContext.Users.FindAsync(userId);
-        var now = DateTimeOffset.UtcNow;
-        var message = new Message
-        {
-            Id = Guid.NewGuid(),
-            ConversationId = conversationId,
-            SenderId = userId,
-            Content = trimmed,
-            MessageType = "Text",
-            ReplyToId = replyMsg?.Id,
-            CreatedAt = now
-        };
-
-        _dbContext.Messages.Add(message);
-        conv.LastMessageId = message.Id;
-        conv.UpdatedAt = now;
-
-        await _dbContext.SaveChangesAsync();
-
-        var replySenderName = replyMsg != null ? (replyMsg.Sender?.DisplayName ?? "Hệ thống") : null;
-        var replyContent = replyMsg != null
-            ? (replyMsg.IsRecalled ? "Tin nhắn đã được thu hồi" : (replyMsg.Content ?? ""))
-            : null;
-
-        // Gửi tới từng user group để hội thoại mới tạo cũng nhận được ngay không cần F5
-        await Clients.Groups(activeMemberIds.Select(GetUserGroupName).ToList()).SendAsync("ReceiveMessage", new
-        {
-            id = message.Id,
-            conversationId = message.ConversationId,
-            senderId = message.SenderId,
-            senderName = sender?.DisplayName ?? "Người dùng",
-            senderAvatar = sender?.AvatarUrl ?? "",
-            content = message.Content,
-            messageType = message.MessageType,
-            replyToId = message.ReplyToId,
-            replyToSenderName = replySenderName,
-            replyToContent = replyContent,
-            isPinned = false,
-            createdAt = message.CreatedAt.ToString("HH:mm"),
-            formattedDate = message.CreatedAt.ToString("dd/MM/yyyy HH:mm")
-        });
     }
 
     public static string GetUserGroupName(Guid userId) => $"user:{userId}";

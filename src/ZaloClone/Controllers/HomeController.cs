@@ -9,6 +9,7 @@ using ZaloClone.Infrastructure;
 using ZaloClone.Models;
 using ZaloClone.Models.Entities;
 using ZaloClone.Models.ViewModels.Chat;
+using ZaloClone.Services.Chat;
 
 namespace ZaloClone.Controllers;
 
@@ -16,13 +17,13 @@ namespace ZaloClone.Controllers;
 public class HomeController : Controller
 {
     private readonly AppDbContext _context;
-    private readonly IHubContext<ChatHub> _hubContext;
+    private readonly IChatService _chatService;
     private readonly ILogger<HomeController> _logger;
 
-    public HomeController(AppDbContext context, IHubContext<ChatHub> hubContext, ILogger<HomeController> logger)
+    public HomeController(AppDbContext context, IChatService chatService, ILogger<HomeController> logger)
     {
         _context = context;
-        _hubContext = hubContext;
+        _chatService = chatService;
         _logger = logger;
     }
 
@@ -57,6 +58,29 @@ public class HomeController : Controller
             .Where(m => convIds.Contains(m.ConversationId) && m.LeftAt == null && m.UserId != currentUserId)
             .Select(m => new { m.ConversationId, m.UserId })
             .ToListAsync();
+
+        // Batch query đếm tin nhắn chưa đọc (tránh N+1 query trong vòng lặp)
+        var unreadCheckThresholds = memberships
+            .Where(m => m.Conversation.LastMessage != null && m.LastReadMessageId != m.Conversation.LastMessageId)
+            .ToDictionary(m => m.ConversationId, m => m.LastReadMessage?.CreatedAt ?? DateTimeOffset.MinValue);
+
+        var unreadCounts = new Dictionary<Guid, int>();
+        if (unreadCheckThresholds.Count > 0)
+        {
+            var checkConvIds = unreadCheckThresholds.Keys.ToList();
+            var minThreshold = unreadCheckThresholds.Values.Min();
+            var recentUnreadCandidates = await _context.Messages
+                .AsNoTracking()
+                .Where(msg => checkConvIds.Contains(msg.ConversationId) && msg.SenderId != currentUserId && msg.CreatedAt > minThreshold)
+                .Select(msg => new { msg.ConversationId, msg.CreatedAt })
+                .ToListAsync();
+
+            foreach (var group in recentUnreadCandidates.GroupBy(x => x.ConversationId))
+            {
+                var threshold = unreadCheckThresholds[group.Key];
+                unreadCounts[group.Key] = group.Count(x => x.CreatedAt > threshold);
+            }
+        }
 
         var convSummaries = new List<ConversationSummaryDto>();
 
@@ -112,15 +136,7 @@ public class HomeController : Controller
                     formattedTime = $"{(int)diff.TotalDays}d";
             }
 
-            int unreadCount = 0;
-            if (lastMsg != null && m.LastReadMessageId != lastMsg.Id && lastMsg.SenderId != currentUserId)
-            {
-                var lastReadTime = m.LastReadMessage?.CreatedAt ?? DateTimeOffset.MinValue;
-                unreadCount = await _context.Messages.CountAsync(msg =>
-                    msg.ConversationId == c.Id &&
-                    msg.SenderId != currentUserId &&
-                    msg.CreatedAt > lastReadTime);
-            }
+            int unreadCount = unreadCounts.TryGetValue(c.Id, out var count) ? count : 0;
 
             convSummaries.Add(new ConversationSummaryDto
             {
@@ -205,7 +221,7 @@ public class HomeController : Controller
             }).ToList();
 
             var attachments = await _context.MessageAttachments
-                .Where(a => a.Message.ConversationId == activeId.Value)
+                .Where(a => a.Message.ConversationId == activeId.Value && !a.Message.IsRecalled)
                 .OrderByDescending(a => a.CreatedAt)
                 .Select(a => new AttachmentDto
                 {
@@ -326,7 +342,7 @@ public class HomeController : Controller
             : members.Any(m => m.UserId != currentUserId && m.IsOnline);
 
         var attachments = await _context.MessageAttachments
-            .Where(a => a.Message.ConversationId == conversationId)
+            .Where(a => a.Message.ConversationId == conversationId && !a.Message.IsRecalled)
             .OrderByDescending(a => a.CreatedAt)
             .Select(a => new AttachmentDto
             {
@@ -364,82 +380,18 @@ public class HomeController : Controller
     public async Task<IActionResult> SendMessage([FromBody] SendMessageRequest req)
     {
         var currentUserId = User.GetUserId();
-        if (currentUserId == Guid.Empty || string.IsNullOrWhiteSpace(req?.Content))
+        if (currentUserId == Guid.Empty || req == null || req.ConversationId == Guid.Empty)
         {
             return BadRequest(new { success = false, message = "Nội dung không hợp lệ" });
         }
 
-        var trimmed = req.Content.Trim();
-        if (trimmed.Length > 4000)
+        var result = await _chatService.SendTextMessageAsync(req.ConversationId, currentUserId, req.Content);
+        if (!result.Success)
         {
-            return BadRequest(new { success = false, message = "Tin nhắn không được vượt quá 4.000 ký tự." });
+            return BadRequest(result);
         }
 
-        var activeMemberIds = await _context.ConversationMembers
-            .Where(m => m.ConversationId == req.ConversationId && m.LeftAt == null)
-            .Select(m => m.UserId)
-            .ToListAsync();
-        if (!activeMemberIds.Contains(currentUserId))
-        {
-            return Forbid();
-        }
-
-        var conv = await _context.Conversations
-            .Include(c => c.DirectConversation)
-            .FirstOrDefaultAsync(c => c.Id == req.ConversationId);
-        if (conv == null)
-        {
-            return NotFound(new { success = false, message = "Không tìm thấy hội thoại." });
-        }
-
-        if (!conv.IsGroup && conv.DirectConversation != null)
-        {
-            var u1 = conv.DirectConversation.UserId1;
-            var u2 = conv.DirectConversation.UserId2;
-            var isBlocked = await _context.UserBlocks.AnyAsync(b =>
-                (b.BlockerId == u1 && b.BlockedId == u2) ||
-                (b.BlockerId == u2 && b.BlockedId == u1));
-            if (isBlocked)
-            {
-                return BadRequest(new { success = false, message = "Không thể gửi tin nhắn do một trong hai người đã chặn nhau." });
-            }
-        }
-
-        var sender = await _context.Users.FindAsync(currentUserId);
-        var now = DateTimeOffset.UtcNow;
-        var message = new Message
-        {
-            Id = Guid.NewGuid(),
-            ConversationId = req.ConversationId,
-            SenderId = currentUserId,
-            Content = trimmed,
-            MessageType = "Text",
-            CreatedAt = now
-        };
-
-        _context.Messages.Add(message);
-        conv.LastMessageId = message.Id;
-        conv.UpdatedAt = now;
-
-        await _context.SaveChangesAsync();
-
-        var payload = new
-        {
-            id = message.Id,
-            conversationId = message.ConversationId,
-            senderId = message.SenderId,
-            senderName = sender?.DisplayName ?? "Người dùng",
-            senderAvatar = sender?.AvatarUrl ?? "",
-            content = message.Content,
-            createdAt = message.CreatedAt.ToString("HH:mm"),
-            formattedDate = message.CreatedAt.ToString("dd/MM/yyyy HH:mm")
-        };
-
-        // Bắn SignalR broadcast
-        await _hubContext.Clients.Group(ChatHub.GetConversationGroupName(req.ConversationId))
-            .SendAsync("ReceiveMessage", payload);
-
-        return Json(new { success = true, data = payload });
+        return Json(result);
     }
 
     public IActionResult Privacy()

@@ -292,7 +292,8 @@ public class ChatService : IChatService
 
         var sender = await _context.Users.FindAsync(senderId);
         var now = DateTimeOffset.UtcNow;
-        var fileUrl = _storageService.GetRelativeUrl(storageKey);
+        var attachmentId = Guid.NewGuid();
+        var fileUrl = $"/Chat/File/{attachmentId}";
 
         var message = new Message
         {
@@ -309,7 +310,7 @@ public class ChatService : IChatService
 
         var attachment = new MessageAttachment
         {
-            Id = Guid.NewGuid(),
+            Id = attachmentId,
             MessageId = message.Id,
             FileName = file.FileName,
             StorageKey = storageKey,
@@ -372,7 +373,9 @@ public class ChatService : IChatService
 
     public async Task<ApiResponse> RecallMessageAsync(Guid messageId, Guid userId)
     {
-        var message = await _context.Messages.FindAsync(messageId);
+        var message = await _context.Messages
+            .Include(m => m.Attachments)
+            .FirstOrDefaultAsync(m => m.Id == messageId);
         if (message == null)
         {
             return ApiResponse.Fail("Không tìm thấy tin nhắn.");
@@ -386,6 +389,16 @@ public class ChatService : IChatService
         if (message.IsRecalled)
         {
             return ApiResponse.Fail("Tin nhắn này đã được thu hồi trước đó.");
+        }
+
+        // CHAT-14: Xóa file vật lý và attachment khi thu hồi tin nhắn có file
+        if (message.Attachments.Count > 0)
+        {
+            foreach (var att in message.Attachments)
+            {
+                await _storageService.DeleteFileAsync(att.StorageKey);
+            }
+            _context.MessageAttachments.RemoveRange(message.Attachments);
         }
 
         message.IsRecalled = true;
@@ -502,7 +515,7 @@ public class ChatService : IChatService
         }
 
         var attachments = await _context.MessageAttachments
-            .Where(a => a.Message.ConversationId == conversationId)
+            .Where(a => a.Message.ConversationId == conversationId && !a.Message.IsRecalled)
             .OrderByDescending(a => a.CreatedAt)
             .Select(a => new AttachmentDto
             {
