@@ -15,16 +15,30 @@ using ZaloClone.Services.Storage;
 
 var builder = WebApplication.CreateBuilder(args);
 
-// 1. Cấu hình Database (PostgreSQL + Snake Case)
+// 1. Cấu hình Database (PostgreSQL + Snake Case), hỗ trợ cả ConnectionStrings:Default và DATABASE_URL (Render/Railway)
 var connectionString = builder.Configuration.GetConnectionString("Default");
 if (string.IsNullOrWhiteSpace(connectionString))
 {
-    if (!builder.Environment.IsDevelopment())
+    var databaseUrl = Environment.GetEnvironmentVariable("DATABASE_URL");
+    if (!string.IsNullOrWhiteSpace(databaseUrl) &&
+        (databaseUrl.StartsWith("postgres://", StringComparison.OrdinalIgnoreCase) ||
+         databaseUrl.StartsWith("postgresql://", StringComparison.OrdinalIgnoreCase)))
     {
-        throw new InvalidOperationException("ConnectionStrings:Default chưa được cấu hình.");
+        var uri = new Uri(databaseUrl);
+        var userInfo = uri.UserInfo.Split(':', 2);
+        var dbPort = uri.Port > 0 ? uri.Port : 5432;
+        var dbName = uri.AbsolutePath.TrimStart('/');
+        connectionString =
+            $"Host={uri.Host};Port={dbPort};Database={dbName};Username={Uri.UnescapeDataString(userInfo[0])};Password={Uri.UnescapeDataString(userInfo.Length > 1 ? userInfo[1] : "")};SSL Mode=Require;Trust Server Certificate=true";
     }
-
-    connectionString = "Host=localhost;Port=5432;Database=ZaloCloneDb;Username=postgres;Password=YourSecurePassword2026";
+    else if (builder.Environment.IsDevelopment())
+    {
+        connectionString = "Host=localhost;Port=5432;Database=ZaloCloneDb;Username=postgres;Password=YourSecurePassword2026";
+    }
+    else
+    {
+        throw new InvalidOperationException("ConnectionStrings:Default hoặc DATABASE_URL chưa được cấu hình.");
+    }
 }
 
 builder.Services.AddDbContext<AppDbContext>(options =>
@@ -154,11 +168,34 @@ if (app.Environment.IsDevelopment())
 }
 else
 {
+    // Tự động chạy Migration khi deploy lên Render / Railway
+    if (app.Environment.IsProduction())
+    {
+        try
+        {
+            using var scope = app.Services.CreateScope();
+            var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+            await db.Database.MigrateAsync();
+        }
+        catch (Exception ex)
+        {
+            app.Logger.LogError(ex, "Lỗi khi chạy Migration tự động lúc khởi động.");
+        }
+    }
+
     app.UseExceptionHandler("/Home/Error");
     app.UseHsts();
 }
 
-app.UseHttpsRedirection();
+app.UseForwardedHeaders(new ForwardedHeadersOptions
+{
+    ForwardedHeaders = Microsoft.AspNetCore.HttpOverrides.ForwardedHeaders.XForwardedFor
+                     | Microsoft.AspNetCore.HttpOverrides.ForwardedHeaders.XForwardedProto
+});
+if (app.Environment.IsDevelopment())
+{
+    app.UseHttpsRedirection();
+}
 app.Use(async (context, next) =>
 {
     context.Response.Headers["X-Content-Type-Options"] = "nosniff";
