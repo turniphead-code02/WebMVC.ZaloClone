@@ -179,6 +179,34 @@ public class ChatService : IChatService
         var sender = await _context.Users.FindAsync(senderId);
         var now = DateTimeOffset.UtcNow;
 
+        // Chống gửi trùng 2 request giống hệt nhau trong cùng < 800ms (vd: lỗi IME/double-click)
+        var duplicateCutoff = now.AddMilliseconds(-800);
+        var existingDuplicate = await _context.Messages
+            .AsNoTracking()
+            .Where(m => m.ConversationId == conversationId
+                     && m.SenderId == senderId
+                     && m.MessageType == "Text"
+                     && m.Content == trimmed
+                     && m.CreatedAt >= duplicateCutoff)
+            .OrderByDescending(m => m.CreatedAt)
+            .FirstOrDefaultAsync();
+
+        if (existingDuplicate != null)
+        {
+            return ApiResponse<MessageDto>.Ok(new MessageDto
+            {
+                Id = existingDuplicate.Id,
+                SenderId = senderId,
+                SenderName = sender?.DisplayName ?? "Người dùng",
+                SenderAvatar = sender?.AvatarUrl,
+                Content = existingDuplicate.Content ?? trimmed,
+                MessageType = existingDuplicate.MessageType,
+                CreatedAt = existingDuplicate.CreatedAt,
+                FormattedTime = existingDuplicate.CreatedAt.ToString("HH:mm"),
+                IsSelf = true
+            }, "Gửi tin nhắn thành công.");
+        }
+
         var message = new Message
         {
             Id = Guid.NewGuid(),

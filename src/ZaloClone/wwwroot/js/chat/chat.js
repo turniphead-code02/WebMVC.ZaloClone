@@ -199,6 +199,9 @@ document.addEventListener("DOMContentLoaded", function () {
     // Nhận tin nhắn mới tức thời từ Server
     connection.on("ReceiveMessage", function (msg) {
         if (msg.conversationId === activeConvId && chatStream) {
+            if (msg.id && document.querySelector(`.msg-row[data-message-id="${msg.id}"]`)) {
+                return;
+            }
             const emptyHint = chatStream.querySelector(".text-center.text-muted");
             if (emptyHint) emptyHint.remove();
 
@@ -565,11 +568,15 @@ document.addEventListener("DOMContentLoaded", function () {
         }
     }
 
-    // 2. GỬI TIN NHẮN VĂN BẢN (Hỗ trợ kèm ReplyToId)
+    // 2. GỬI TIN NHẮN VĂN BẢN (Hỗ trợ kèm ReplyToId, chống gửi trùng IME / double-trigger)
+    let isSendingMessage = false;
     async function sendMessage() {
-        if (!inputMessage) return;
+        if (isSendingMessage || !inputMessage) return;
         const content = inputMessage.value.trim();
         if (!content || !activeConvId) return;
+
+        isSendingMessage = true;
+        if (btnSend) btnSend.disabled = true;
 
         const replyId = replyingTo ? replyingTo.id : null;
         inputMessage.value = "";
@@ -592,18 +599,26 @@ document.addEventListener("DOMContentLoaded", function () {
             }
         } catch (err) {
             console.error("Lỗi khi gửi tin nhắn:", err);
+        } finally {
+            isSendingMessage = false;
+            if (btnSend) btnSend.disabled = false;
         }
     }
 
     if (btnSend) {
-        btnSend.addEventListener("click", sendMessage);
+        btnSend.addEventListener("click", function (e) {
+            e.preventDefault();
+            sendMessage();
+        });
     }
 
     let lastTypingSentAt = 0;
     if (inputMessage) {
         inputMessage.addEventListener("keydown", function (e) {
+            if (e.isComposing || e.keyCode === 229) return;
             if (e.key === "Enter" && !e.shiftKey) {
                 e.preventDefault();
+                e.stopPropagation();
                 sendMessage();
             }
         });
